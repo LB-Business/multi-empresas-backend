@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { CurrentUser } from 'src/common/interfaces/current-user.interface';
+import { CurrentUser } from '../../common/interfaces/current-user.interface';
 
 import { CreateBusinessDto } from './dto/create-business.dto';
 import { UpdateBusinessDto } from './dto/update-businesses.dto';

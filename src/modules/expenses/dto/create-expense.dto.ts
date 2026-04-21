@@ -8,9 +8,9 @@ import {
   IsString,
   Min,
 } from 'class-validator';
-import { Currency } from 'src/common/enums/currency.enum';
-import { ExpensePaymentStatus } from 'src/common/enums/expense-payment-status.enum';
-import { ExpenseType } from 'src/common/enums/expense-type.enum';
+import { Currency } from '../../../common/enums/currency.enum';
+import { ExpensePaymentStatus } from '../../../common/enums/expense-payment-status.enum';
+import { ExpenseType } from '../../../common/enums/expense-type.enum';
 import { ExpenseRecurrence } from '../schemas/expense.schema';
 
 export class CreateExpenseDto {

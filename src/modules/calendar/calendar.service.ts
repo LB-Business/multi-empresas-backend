@@ -5,11 +5,11 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
-import { CalendarEventStatus } from 'src/common/enums/calendar-event-status.enum';
-import { CalendarEventType } from 'src/common/enums/calendar-event-type.enum';
-import { Currency } from 'src/common/enums/currency.enum';
-import { ExpensePaymentStatus } from 'src/common/enums/expense-payment-status.enum';
-import { CurrentUser } from 'src/common/interfaces/current-user.interface';
+import { CalendarEventStatus } from '../../common/enums/calendar-event-status.enum';
+import { CalendarEventType } from '../../common/enums/calendar-event-type.enum';
+import { Currency } from '../../common/enums/currency.enum';
+import { ExpensePaymentStatus } from '../../common/enums/expense-payment-status.enum';
+import { CurrentUser } from '../../common/interfaces/current-user.interface';
 import { BusinessesService } from '../businesses/businesses.service';
 import {
   Expense,

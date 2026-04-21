@@ -7,7 +7,7 @@ import {
   IsString,
   MinLength,
 } from 'class-validator';
-import { UserRole } from 'src/common/enums/user-role.enum';
+import { UserRole } from '../../../common/enums/user-role.enum';
 
 export class CreateUserBySuperAdminDto {
   @ApiProperty({ example: '69c1532e3cffc88eecea20a0' })

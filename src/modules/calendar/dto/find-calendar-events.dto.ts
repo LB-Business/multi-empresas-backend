@@ -1,8 +1,8 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
-import { CalendarEventStatus } from 'src/common/enums/calendar-event-status.enum';
-import { CalendarEventType } from 'src/common/enums/calendar-event-type.enum';
+import { CalendarEventStatus } from '../../../common/enums/calendar-event-status.enum';
+import { CalendarEventType } from '../../../common/enums/calendar-event-type.enum';
 
 export class FindCalendarEventsDto {
   @ApiPropertyOptional({ enum: CalendarEventType })

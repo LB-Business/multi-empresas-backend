@@ -7,8 +7,8 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import * as argon2 from 'argon2';
 import { Model, Types } from 'mongoose';
-import { UserRole } from 'src/common/enums/user-role.enum';
-import { CurrentUser } from 'src/common/interfaces/current-user.interface';
+import { UserRole } from '../../common/enums/user-role.enum';
+import { CurrentUser } from '../../common/interfaces/current-user.interface';
 import { BusinessesService } from '../businesses/businesses.service';
 import { CreateUserBySuperAdminDto } from './dto/create-user-by-super-admin.dto';
 import { CreateUserDto } from './dto/create-user.dto';

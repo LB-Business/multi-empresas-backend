@@ -13,9 +13,9 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { Currency } from 'src/common/enums/currency.enum';
-import { ProductStatus } from 'src/common/enums/product-status.enum';
-import { ProductType } from 'src/common/enums/product-type.enum';
+import { Currency } from '../../../common/enums/currency.enum';
+import { ProductStatus } from '../../../common/enums/product-status.enum';
+import { ProductType } from '../../../common/enums/product-type.enum';
 import { ProductOwnershipType } from '../schemas/product.schema';
 
 export class ProductImageDto {

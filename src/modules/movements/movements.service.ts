@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { CurrentUser } from 'src/common/interfaces/current-user.interface';
+import { CurrentUser } from '../../common/interfaces/current-user.interface';
 import { Movement, MovementDocument } from './schema/movements.schema';
 
 export type MovementDirection = 'in' | 'out' | 'neutral';

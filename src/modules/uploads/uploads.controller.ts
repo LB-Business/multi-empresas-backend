@@ -17,8 +17,8 @@ import {
   ApiConsumes,
   ApiTags,
 } from '@nestjs/swagger';
-import { UserRole } from 'src/common/enums/user-role.enum';
-import { CurrentUser } from 'src/common/interfaces/current-user.interface';
+import { UserRole } from '../../common/enums/user-role.enum';
+import { CurrentUser } from '../../common/interfaces/current-user.interface';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DeleteImageDto } from './dto/delete-image.dto';
 import { UploadsService } from './uploads.service';

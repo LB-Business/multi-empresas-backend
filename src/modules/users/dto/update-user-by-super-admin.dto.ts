@@ -1,7 +1,7 @@
 import { PartialType } from '@nestjs/mapped-types';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsMongoId, IsOptional } from 'class-validator';
-import { UserRole } from 'src/common/enums/user-role.enum';
+import { UserRole } from '../../../common/enums/user-role.enum';
 import { CreateUserBySuperAdminDto } from './create-user-by-super-admin.dto';
 
 export class UpdateUserBySuperAdminDto extends PartialType(

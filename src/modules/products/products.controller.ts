@@ -9,8 +9,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { CurrentUserDecorator } from 'src/common/decorators/current-user.decorator';
-import { CurrentUser } from 'src/common/interfaces/current-user.interface';
+import { CurrentUserDecorator } from '../../common/decorators/current-user.decorator';
+import { CurrentUser } from '../../common/interfaces/current-user.interface';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductStatusDto } from './dto/update-product-status.dto';

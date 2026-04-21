@@ -10,11 +10,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { CurrentUserDecorator } from 'src/common/decorators/current-user.decorator';
-import { Roles } from 'src/common/decorators/roles.decorator';
-import { UserRole } from 'src/common/enums/user-role.enum';
-import { RolesGuard } from 'src/common/guards/roles.guard';
-import { CurrentUser } from 'src/common/interfaces/current-user.interface';
+import { CurrentUserDecorator } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../../common/enums/user-role.enum';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { CurrentUser } from '../../common/interfaces/current-user.interface';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { FindExpensesDto } from './dto/find-expenses.dto';

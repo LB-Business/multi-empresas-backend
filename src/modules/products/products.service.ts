@@ -6,10 +6,10 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { UserRole } from 'src/common/enums/user-role.enum';
-import { ProductStatus } from 'src/common/enums/product-status.enum';
-import { ProductType } from 'src/common/enums/product-type.enum';
-import { CurrentUser } from 'src/common/interfaces/current-user.interface';
+import { UserRole } from '../../common/enums/user-role.enum';
+import { ProductStatus } from '../../common/enums/product-status.enum';
+import { ProductType } from '../../common/enums/product-type.enum';
+import { CurrentUser } from '../../common/interfaces/current-user.interface';
 import { BusinessesService } from '../businesses/businesses.service';
 import {
   CreateProductDto,

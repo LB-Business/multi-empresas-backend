@@ -16,7 +16,7 @@ import {
   FinanceMovementDocument,
   FinanceMovementType,
 } from './schema/finance-movement.schema';
-import { CurrentUser } from 'src/common/interfaces/current-user.interface';
+import { CurrentUser } from '../../common/interfaces/current-user.interface';
 
 type FinanceSummary = {
   period: {

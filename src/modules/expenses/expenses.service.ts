@@ -5,10 +5,10 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
-import { Currency } from 'src/common/enums/currency.enum';
-import { ExpensePaymentStatus } from 'src/common/enums/expense-payment-status.enum';
-import { ExpenseType } from 'src/common/enums/expense-type.enum';
-import { CurrentUser } from 'src/common/interfaces/current-user.interface';
+import { Currency } from '../../common/enums/currency.enum';
+import { ExpensePaymentStatus } from '../../common/enums/expense-payment-status.enum';
+import { ExpenseType } from '../../common/enums/expense-type.enum';
+import { CurrentUser } from '../../common/interfaces/current-user.interface';
 import { MovementsService } from '../movements/movements.service';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { CreateExpenseDto } from './dto/create-expense.dto';

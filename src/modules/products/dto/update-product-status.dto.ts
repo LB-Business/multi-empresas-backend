@@ -10,7 +10,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ProductStatus } from 'src/common/enums/product-status.enum';
+import { ProductStatus } from '../../../common/enums/product-status.enum';
 import { ProductReservationDto } from './create-product.dto';
 
 export class UpdateProductStatusDto {

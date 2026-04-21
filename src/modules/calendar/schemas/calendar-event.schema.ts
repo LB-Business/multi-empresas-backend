@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
-import { CalendarEventStatus } from 'src/common/enums/calendar-event-status.enum';
-import { CalendarEventType } from 'src/common/enums/calendar-event-type.enum';
+import { CalendarEventStatus } from '../../../common/enums/calendar-event-status.enum';
+import { CalendarEventType } from '../../../common/enums/calendar-event-type.enum';
 
 export type CalendarEventDocument = HydratedDocument<CalendarEvent>;
 

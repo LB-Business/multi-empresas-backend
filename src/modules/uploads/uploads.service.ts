@@ -10,8 +10,8 @@ import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 import { Model, Types } from 'mongoose';
 import { Readable } from 'stream';
 import sharp from 'sharp';
-import { UserRole } from 'src/common/enums/user-role.enum';
-import { CurrentUser } from 'src/common/interfaces/current-user.interface';
+import { UserRole } from '../../common/enums/user-role.enum';
+import { CurrentUser } from '../../common/interfaces/current-user.interface';
 import {
   Business,
   BusinessDocument,

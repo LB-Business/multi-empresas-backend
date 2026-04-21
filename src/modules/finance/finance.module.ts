@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { RolesGuard } from 'src/common/guards/roles.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
 import { Expense, ExpenseSchema } from '../expenses/schemas/expense.schema';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { FinanceController } from './finance.controller';

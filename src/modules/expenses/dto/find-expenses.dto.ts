@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
-import { ExpensePaymentStatus } from 'src/common/enums/expense-payment-status.enum';
-import { ExpenseType } from 'src/common/enums/expense-type.enum';
+import { ExpensePaymentStatus } from '../../../common/enums/expense-payment-status.enum';
+import { ExpenseType } from '../../../common/enums/expense-type.enum';
 
 export class FindExpensesDto {
   @ApiPropertyOptional({ example: '2026-04' })
