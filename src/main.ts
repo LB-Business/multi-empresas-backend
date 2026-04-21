@@ -8,8 +8,19 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
-  app.enableCors();
+  app.enableCors({
+    origin: [
+      'http://localhost:8080',
+      'http://localhost:3000',
+      'https://frontend-lb-business.vercel.app',
+    ],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: false,
+  });
+
   app.setGlobalPrefix('api');
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -35,6 +46,7 @@ async function bootstrap() {
 
   const port = configService.get<number>('app.port', 3000);
   await app.listen(port);
+
   console.log(`API ready on http://localhost:${port}/api`);
   console.log(`Swagger ready on http://localhost:${port}/docs`);
 }
