@@ -1,10 +1,8 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
   ForbiddenException,
-  PayloadTooLargeException,
   Post,
   Req,
   UploadedFile,
@@ -50,17 +48,7 @@ export class UploadsController {
     FileInterceptor('file', {
       storage: memoryStorage(),
       limits: {
-        fileSize: 6 * 1024 * 1024, // 6MB
-      },
-      fileFilter: (_req, file, callback) => {
-        if (!file.mimetype.startsWith('image/')) {
-          return callback(
-            new BadRequestException('El archivo debe ser una imagen'),
-            false,
-          );
-        }
-
-        callback(null, true);
+        fileSize: 6 * 1024 * 1024,
       },
     }),
   )
@@ -68,37 +56,7 @@ export class UploadsController {
     @UploadedFile() file: Express.Multer.File,
     @Req() req: { user: CurrentUser },
   ) {
-    console.log('UPLOAD IMAGE HIT');
-    console.log('user exists:', !!req.user);
-    console.log('file exists:', !!file);
-    console.log('file size:', file?.size);
-    console.log('file mimetype:', file?.mimetype);
-
-    console.log('cloudinary envs:', {
-      cloudName: !!process.env.CLOUDINARY_CLOUD_NAME,
-      apiKey: !!process.env.CLOUDINARY_API_KEY,
-      apiSecret: !!process.env.CLOUDINARY_API_SECRET,
-      folder: process.env.CLOUDINARY_FOLDER || null,
-    });
-
-    if (!file) {
-      throw new BadRequestException(
-        'No se recibió ninguna imagen. El campo del FormData debe llamarse "file".',
-      );
-    }
-
-    if (file.size > 6 * 1024 * 1024) {
-      throw new PayloadTooLargeException(
-        'La imagen supera el tamaño máximo permitido de 6MB',
-      );
-    }
-
-    try {
-      return await this.uploadsService.uploadImage(file, req.user);
-    } catch (error) {
-      console.error('UPLOAD IMAGE ERROR:', error);
-      throw error;
-    }
+    return this.uploadsService.uploadImage(file, req.user);
   }
 
   @Delete('image')
@@ -111,10 +69,6 @@ export class UploadsController {
   ) {
     if (req.user.role !== UserRole.OWNER) {
       throw new ForbiddenException('Only OWNER can delete images');
-    }
-
-    if (!dto.publicId) {
-      throw new BadRequestException('Falta publicId');
     }
 
     return this.uploadsService.deleteImage(dto.publicId, req.user);
