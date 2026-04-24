@@ -8,15 +8,32 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
+  const allowedOrigins = [
+    'http://localhost:8080',
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:3000',
+    'https://frontend-lb-business.vercel.app',
+  ];
+
   app.enableCors({
-    origin: [
-      'http://localhost:8080',
-      'http://localhost:3000',
-      'https://frontend-lb-business.vercel.app',
-    ],
+    origin: (origin, callback) => {
+      // Permite requests sin origin, como Postman, Swagger o navegador directo
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      console.log('CORS blocked origin:', origin);
+      return callback(new Error(`CORS blocked origin: ${origin}`), false);
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: false,
+    optionsSuccessStatus: 204,
   });
 
   app.setGlobalPrefix('api');
