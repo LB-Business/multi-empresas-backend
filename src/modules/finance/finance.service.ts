@@ -23,6 +23,7 @@ type FinanceTotals = {
   balance: number;
   salesIncome: number;
   depositsIncome: number;
+  depositRefunds: number;
   manualExpenses: number;
   productExtraExpenses: number;
   vehiclePurchases: number;
@@ -68,6 +69,7 @@ function createEmptyTotals(): FinanceTotals {
     balance: 0,
     salesIncome: 0,
     depositsIncome: 0,
+    depositRefunds: 0,
     manualExpenses: 0,
     productExtraExpenses: 0,
     vehiclePurchases: 0,
@@ -95,16 +97,50 @@ export class FinanceService {
     const businessId = this.toObjectId(currentUser.businessId, 'businessId');
     const userId = this.toObjectId(currentUser.sub, 'userId');
 
-    const [manualExpenses, products] = await Promise.all([
-      this.expenseModel
-        .find({
-          businessId,
-          expenseDate: { $gte: start, $lt: end },
-        })
-        .exec(),
+    const [manualExpenses, products, existingDepositMovements, existingRefundMovements] =
+      await Promise.all([
+        this.expenseModel
+          .find({
+            businessId,
+            expenseDate: { $gte: start, $lt: end },
+          })
+          .exec(),
 
-      this.productModel.find({ businessId }).exec(),
-    ]);
+        this.productModel.find({ businessId }).exec(),
+
+        this.financeMovementModel
+          .find({
+            businessId,
+            type: FinanceMovementType.DEPOSIT_RECEIVED,
+          })
+          .lean()
+          .exec(),
+
+        this.financeMovementModel
+          .find({
+            businessId,
+            type: FinanceMovementType.DEPOSIT_REFUNDED,
+          })
+          .select('dedupeKey meta')
+          .lean()
+          .exec(),
+      ]);
+
+    const existingRefundKeys = new Set<string>();
+
+    for (const movement of existingRefundMovements) {
+      if (movement.dedupeKey) {
+        existingRefundKeys.add(String(movement.dedupeKey));
+      }
+
+      const originalDepositDedupeKey = String(
+        (movement.meta as any)?.originalDepositDedupeKey ?? '',
+      );
+
+      if (originalDepositDedupeKey) {
+        existingRefundKeys.add(`deposit_refunded:${originalDepositDedupeKey}`);
+      }
+    }
 
     const payloads: Array<Record<string, any>> = [];
 
@@ -206,41 +242,83 @@ export class FinanceService {
         });
       });
 
-      if (
-        product.reservation?.depositAmount != null &&
-        Number(product.reservation.depositAmount ?? 0) > 0 &&
-        product.reservation?.depositDate &&
-        product.reservation.depositDate >= start &&
-        product.reservation.depositDate < end
-      ) {
-        const depositCurrency = this.normalizeCurrency(
-          product.reservation.depositCurrency,
-          productCurrency,
-        );
+      const currentDepositAmount = Number(
+        product.reservation?.depositAmount ?? 0,
+      );
 
-        payloads.push({
-          businessId,
-          direction: FinanceMovementDirection.IN,
-          type: FinanceMovementType.DEPOSIT_RECEIVED,
-          title: `Seña recibida - ${productName}`,
-          description: product.reservation.notes ?? null,
-          amount: Number(product.reservation.depositAmount ?? 0),
-          currency: depositCurrency,
-          date: product.reservation.depositDate,
-          source: 'product',
-          sourceId: productId,
-          productId,
-          productName,
-          dedupeKey: `deposit_received:${productId}:${product.reservation.depositDate.toISOString()}:${Number(
-            product.reservation.depositAmount ?? 0,
-          )}`,
-          meta: {
-            customerName: product.reservation.customerName ?? null,
-            customerPhone: product.reservation.customerPhone ?? null,
-          },
-          createdBy: userId,
-          updatedBy: userId,
-        });
+      if (currentDepositAmount > 0) {
+        const depositDate =
+          product.reservation?.depositDate ??
+          product.updatedAt ??
+          product.createdAt ??
+          new Date();
+
+        if (depositDate >= start && depositDate < end) {
+          const depositCurrency = this.normalizeCurrency(
+            product.reservation?.depositCurrency,
+            productCurrency,
+          );
+
+          const hasExistingActiveDeposit = existingDepositMovements.some(
+            (movement) => {
+              const movementProductId = this.getMovementProductId(movement);
+              const movementAmount = Number(movement.amount ?? 0);
+              const movementCurrency = this.normalizeCurrency(
+                movement.currency,
+                depositCurrency,
+              );
+
+              const isRefunded = this.isDepositMovementRefunded(
+                movement.dedupeKey,
+                existingRefundKeys,
+              );
+
+              return (
+                movementProductId === productId &&
+                movementAmount === currentDepositAmount &&
+                movementCurrency === depositCurrency &&
+                !isRefunded
+              );
+            },
+          );
+
+          if (!hasExistingActiveDeposit) {
+            const baseDepositDedupeKey = `deposit_received:${productId}:${depositDate.toISOString()}:${currentDepositAmount}`;
+
+            const baseDepositWasAlreadyRefunded =
+              existingRefundKeys.has(`deposit_refunded:${baseDepositDedupeKey}`);
+
+            const dedupeKey = baseDepositWasAlreadyRefunded
+              ? `deposit_received:${productId}:${depositDate.toISOString()}:${currentDepositAmount}:cycle:${this.getDedupeDateKey(
+                  product.updatedAt ?? new Date(),
+                )}`
+              : baseDepositDedupeKey;
+
+            payloads.push({
+              businessId,
+              direction: FinanceMovementDirection.IN,
+              type: FinanceMovementType.DEPOSIT_RECEIVED,
+              title: `Seña recibida - ${productName}`,
+              description: product.reservation?.notes ?? null,
+              amount: currentDepositAmount,
+              currency: depositCurrency,
+              date: depositDate,
+              source: 'product',
+              sourceId: productId,
+              productId,
+              productName,
+              dedupeKey,
+              meta: {
+                customerName: product.reservation?.customerName ?? null,
+                customerPhone: product.reservation?.customerPhone ?? null,
+                depositDate,
+                cycleCreatedAt: product.updatedAt ?? new Date(),
+              },
+              createdBy: userId,
+              updatedBy: userId,
+            });
+          }
+        }
       }
 
       if (
@@ -307,32 +385,17 @@ export class FinanceService {
       productsById.set(product.id, product);
     }
 
-    const existingDepositMovements = await this.financeMovementModel
-      .find({
-        businessId,
-        type: FinanceMovementType.DEPOSIT_RECEIVED,
-      })
-      .lean()
-      .exec();
-
-    const existingRefundMovements = await this.financeMovementModel
-      .find({
-        businessId,
-        type: FinanceMovementType.DEPOSIT_REFUNDED,
-      })
-      .select('dedupeKey')
-      .lean()
-      .exec();
-
-    const existingRefundKeys = new Set(
-      existingRefundMovements.map((movement) => movement.dedupeKey),
-    );
-
     for (const depositMovement of existingDepositMovements) {
-      const productId =
-        depositMovement.productId ||
-        depositMovement.sourceId ||
-        String((depositMovement.meta as any)?.productId ?? '');
+      const depositDedupeKey = String(depositMovement.dedupeKey ?? '');
+
+      if (
+        !depositDedupeKey ||
+        this.isDepositMovementRefunded(depositDedupeKey, existingRefundKeys)
+      ) {
+        continue;
+      }
+
+      const productId = this.getMovementProductId(depositMovement);
 
       if (!productId) continue;
 
@@ -348,7 +411,7 @@ export class FinanceService {
 
       if (product.status !== 'published') continue;
 
-      const refundDedupeKey = `deposit_refunded:${depositMovement.dedupeKey}`;
+      const refundDedupeKey = `deposit_refunded:${depositDedupeKey}`;
 
       if (existingRefundKeys.has(refundDedupeKey)) continue;
 
@@ -372,7 +435,7 @@ export class FinanceService {
         dedupeKey: refundDedupeKey,
         meta: {
           originalDepositMovementId: String((depositMovement as any)._id),
-          originalDepositDedupeKey: depositMovement.dedupeKey,
+          originalDepositDedupeKey: depositDedupeKey,
           reason: 'deposit_returned_and_product_republished',
         },
         createdBy: userId,
@@ -473,6 +536,10 @@ export class FinanceService {
 
         case FinanceMovementType.DEPOSIT_RECEIVED:
           totals.depositsIncome += amount;
+          break;
+
+        case FinanceMovementType.DEPOSIT_REFUNDED:
+          totals.depositRefunds += amount;
           break;
 
         case FinanceMovementType.EXPENSE_MANUAL:
@@ -629,6 +696,28 @@ export class FinanceService {
     if (normalized === 'ARS') return 'ARS';
 
     return fallback;
+  }
+
+  private getMovementProductId(movement: any) {
+    return String(
+      movement?.productId ||
+        movement?.sourceId ||
+        movement?.meta?.productId ||
+        '',
+    );
+  }
+
+  private isDepositMovementRefunded(
+    depositDedupeKey: string | null | undefined,
+    existingRefundKeys: Set<string>,
+  ) {
+    if (!depositDedupeKey) return false;
+
+    return existingRefundKeys.has(`deposit_refunded:${depositDedupeKey}`);
+  }
+
+  private getDedupeDateKey(date: Date) {
+    return new Date(date).toISOString().replace(/[^0-9]/g, '');
   }
 
   private getMonthRange(month?: string) {
