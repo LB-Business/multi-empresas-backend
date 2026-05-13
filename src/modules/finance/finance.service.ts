@@ -488,201 +488,220 @@ export class FinanceService {
       .exec();
   }
 
-  async getSummary(
-    currentUser: CurrentUser,
-    month?: string,
-  ): Promise<FinanceSummary> {
-    this.ensureBusinessContext(currentUser);
+async getSummary(
+  currentUser: CurrentUser,
+  month?: string,
+): Promise<FinanceSummary> {
+  this.ensureBusinessContext(currentUser);
 
-    const { start, end, normalizedMonth } = this.getMonthRange(month);
-    const businessId = this.toObjectId(currentUser.businessId, 'businessId');
+  const { start, end, normalizedMonth } = this.getMonthRange(month);
+  const businessId = this.toObjectId(currentUser.businessId, 'businessId');
 
-    await this.syncMovements(currentUser, month);
+  await this.syncMovements(currentUser, month);
 
-    const [movements, products] = await Promise.all([
-      this.financeMovementModel
-        .find({
-          businessId,
-          date: { $gte: start, $lt: end },
-        })
-        .lean()
-        .exec(),
+  const [movements, products] = await Promise.all([
+    this.financeMovementModel
+      .find({
+        businessId,
+        date: { $gte: start, $lt: end },
+      })
+      .lean()
+      .exec(),
 
-      this.productModel.find({ businessId }).exec(),
-    ]);
+    this.productModel.find({ businessId }).exec(),
+  ]);
 
-    const totalsByCurrency = {
-      ARS: createEmptyTotals(),
-      USD: createEmptyTotals(),
-    };
+  const totalsByCurrency = {
+    ARS: createEmptyTotals(),
+    USD: createEmptyTotals(),
+  };
 
-    for (const movement of movements) {
-      const amount = Number(movement.amount ?? 0);
-      const currency = this.normalizeCurrency(movement.currency, 'ARS');
-      const totals = totalsByCurrency[currency];
+  for (const movement of movements) {
+    const amount = Number(movement.amount ?? 0);
+    const currency = this.normalizeCurrency(movement.currency, 'ARS');
+    const totals = totalsByCurrency[currency];
 
-      if (movement.direction === FinanceMovementDirection.IN) {
-        totals.income += amount;
-      }
-
-      if (movement.direction === FinanceMovementDirection.OUT) {
-        totals.expenses += amount;
-      }
-
-      switch (movement.type) {
-        case FinanceMovementType.PRODUCT_SALE:
-          totals.salesIncome += amount;
-          break;
-
-        case FinanceMovementType.DEPOSIT_RECEIVED:
-          totals.depositsIncome += amount;
-          break;
-
-        case FinanceMovementType.DEPOSIT_REFUNDED:
-          totals.depositRefunds += amount;
-          break;
-
-        case FinanceMovementType.EXPENSE_MANUAL:
-          totals.manualExpenses += amount;
-          break;
-
-        case FinanceMovementType.PRODUCT_EXTRA_EXPENSE:
-          totals.productExtraExpenses += amount;
-          break;
-
-        case FinanceMovementType.VEHICLE_PURCHASE:
-          totals.vehiclePurchases += amount;
-          break;
-
-        case FinanceMovementType.CONSIGNMENT_SETTLEMENT:
-          totals.consignmentSettlements += amount;
-          break;
-      }
+    if (movement.direction === FinanceMovementDirection.IN) {
+      totals.income += amount;
     }
 
-    totalsByCurrency.ARS.balance =
-      totalsByCurrency.ARS.income - totalsByCurrency.ARS.expenses;
+    if (movement.direction === FinanceMovementDirection.OUT) {
+      totals.expenses += amount;
+    }
 
-    totalsByCurrency.USD.balance =
-      totalsByCurrency.USD.income - totalsByCurrency.USD.expenses;
+    switch (movement.type) {
+      case FinanceMovementType.PRODUCT_SALE:
+        totals.salesIncome += amount;
+        break;
 
-    const publishedCount = products.filter(
-      (p) => p.status === 'published',
-    ).length;
+      case FinanceMovementType.DEPOSIT_RECEIVED:
+        totals.depositsIncome += amount;
+        break;
 
-    const reservedCount = products.filter(
-      (p) => p.status === 'reserved',
-    ).length;
+      case FinanceMovementType.DEPOSIT_REFUNDED:
+        totals.depositRefunds += amount;
+        break;
 
-    const soldCount = products.filter((p) => p.status === 'sold').length;
+      case FinanceMovementType.EXPENSE_MANUAL:
+        totals.manualExpenses += amount;
+        break;
 
-    const ownedCount = products.filter(
-      (p) =>
-        (p.ownership?.ownershipType ?? ProductOwnershipType.OWNED) ===
-        ProductOwnershipType.OWNED,
-    ).length;
+      case FinanceMovementType.PRODUCT_EXTRA_EXPENSE:
+        totals.productExtraExpenses += amount;
+        break;
 
-    const consignmentCount = products.filter(
-      (p) => p.ownership?.ownershipType === ProductOwnershipType.CONSIGNMENT,
-    ).length;
+      case FinanceMovementType.VEHICLE_PURCHASE:
+        totals.vehiclePurchases += amount;
+        break;
 
-    const productStatsByCurrency = {
-      ARS: {
-        estimatedProfit: 0,
-        realProfit: 0,
-      },
-      USD: {
-        estimatedProfit: 0,
-        realProfit: 0,
-      },
-    };
+      case FinanceMovementType.CONSIGNMENT_SETTLEMENT:
+        totals.consignmentSettlements += amount;
+        break;
+    }
+  }
 
-    for (const product of products) {
-      const productCurrency = this.normalizeCurrency(product.currency, 'ARS');
+  totalsByCurrency.ARS.balance =
+    totalsByCurrency.ARS.income - totalsByCurrency.ARS.expenses;
 
-      const ownershipType =
-        product.ownership?.ownershipType ?? ProductOwnershipType.OWNED;
+  totalsByCurrency.USD.balance =
+    totalsByCurrency.USD.income - totalsByCurrency.USD.expenses;
 
-      const baseCost =
-        ownershipType === ProductOwnershipType.CONSIGNMENT
-          ? Number(product.ownership?.ownerExpectedAmount ?? 0)
-          : Number(product.finance?.costPrice ?? 0);
+  const isInPeriod = (value?: Date | string | null) => {
+    if (!value) return false;
 
-      const estimatedSale =
-        product.finance?.estimatedSalePrice != null
-          ? Number(product.finance.estimatedSalePrice)
-          : Number(product.salePrice ?? 0);
+    const date = new Date(value);
 
-      const finalSale =
-        product.finance?.finalSalePrice != null
-          ? Number(product.finance.finalSalePrice)
-          : null;
+    if (Number.isNaN(date.getTime())) return false;
 
-      const extraExpensesTotal = (
-        product.finance?.extraExpenseItems ?? []
-      ).reduce((acc, item) => acc + Number(item.amount ?? 0), 0);
+    return date >= start && date < end;
+  };
 
-      if (productCurrency === 'USD') {
-        productStatsByCurrency.USD.estimatedProfit += estimatedSale - baseCost;
+  const getProductPublishedPeriodDate = (product: ProductDocument) => {
+    return product.publishedAt ?? product.createdAt ?? null;
+  };
 
-        if (
-          finalSale != null &&
-          product.soldAt &&
-          product.soldAt >= start &&
-          product.soldAt < end
-        ) {
-          productStatsByCurrency.USD.realProfit += finalSale - baseCost;
-        }
+  const periodPublishedProducts = products.filter((product) =>
+    isInPeriod(getProductPublishedPeriodDate(product)),
+  );
+
+  const publishedCount = products.filter(
+    (product) =>
+      product.status === 'published' &&
+      isInPeriod(getProductPublishedPeriodDate(product)),
+  ).length;
+
+  const reservedCount = products.filter(
+    (product) =>
+      product.status === 'reserved' &&
+      isInPeriod(product.reservation?.depositDate ?? product.updatedAt ?? null),
+  ).length;
+
+  const soldCount = products.filter((product) =>
+    isInPeriod(product.soldAt ?? null),
+  ).length;
+
+  const ownedCount = periodPublishedProducts.filter(
+    (product) =>
+      (product.ownership?.ownershipType ?? ProductOwnershipType.OWNED) ===
+      ProductOwnershipType.OWNED,
+  ).length;
+
+  const consignmentCount = periodPublishedProducts.filter(
+    (product) =>
+      product.ownership?.ownershipType === ProductOwnershipType.CONSIGNMENT,
+  ).length;
+
+  const productStatsByCurrency = {
+    ARS: {
+      estimatedProfit: 0,
+      realProfit: 0,
+    },
+    USD: {
+      estimatedProfit: 0,
+      realProfit: 0,
+    },
+  };
+
+  for (const product of products) {
+    const productCurrency = this.normalizeCurrency(product.currency, 'ARS');
+
+    const ownershipType =
+      product.ownership?.ownershipType ?? ProductOwnershipType.OWNED;
+
+    const baseCost =
+      ownershipType === ProductOwnershipType.CONSIGNMENT
+        ? Number(product.ownership?.ownerExpectedAmount ?? 0)
+        : Number(product.finance?.costPrice ?? 0);
+
+    const estimatedSale =
+      product.finance?.estimatedSalePrice != null
+        ? Number(product.finance.estimatedSalePrice)
+        : Number(product.salePrice ?? 0);
+
+    const finalSale =
+      product.finance?.finalSalePrice != null
+        ? Number(product.finance.finalSalePrice)
+        : null;
+
+    const extraExpensesTotal = (
+      product.finance?.extraExpenseItems ?? []
+    ).reduce((acc, item) => acc + Number(item.amount ?? 0), 0);
+
+    const shouldCountEstimatedProfit = isInPeriod(
+      getProductPublishedPeriodDate(product),
+    );
+
+    const shouldCountRealProfit =
+      finalSale != null && isInPeriod(product.soldAt ?? null);
+
+    if (productCurrency === 'USD') {
+      if (shouldCountEstimatedProfit) {
+        productStatsByCurrency.USD.estimatedProfit +=
+          estimatedSale - baseCost;
 
         productStatsByCurrency.ARS.estimatedProfit -= extraExpensesTotal;
+      }
 
-        if (
-          finalSale != null &&
-          product.soldAt &&
-          product.soldAt >= start &&
-          product.soldAt < end
-        ) {
-          productStatsByCurrency.ARS.realProfit -= extraExpensesTotal;
-        }
-      } else {
+      if (shouldCountRealProfit) {
+        productStatsByCurrency.USD.realProfit += finalSale - baseCost;
+        productStatsByCurrency.ARS.realProfit -= extraExpensesTotal;
+      }
+    } else {
+      if (shouldCountEstimatedProfit) {
         productStatsByCurrency.ARS.estimatedProfit +=
           estimatedSale - baseCost - extraExpensesTotal;
+      }
 
-        if (
-          finalSale != null &&
-          product.soldAt &&
-          product.soldAt >= start &&
-          product.soldAt < end
-        ) {
-          productStatsByCurrency.ARS.realProfit +=
-            finalSale - baseCost - extraExpensesTotal;
-        }
+      if (shouldCountRealProfit) {
+        productStatsByCurrency.ARS.realProfit +=
+          finalSale - baseCost - extraExpensesTotal;
       }
     }
-
-    return {
-      period: {
-        month: normalizedMonth,
-        start,
-        end,
-      },
-
-      totals: totalsByCurrency.ARS,
-      totalsByCurrency,
-
-      productStats: {
-        publishedCount,
-        reservedCount,
-        soldCount,
-        ownedCount,
-        consignmentCount,
-        estimatedProfit: productStatsByCurrency.ARS.estimatedProfit,
-        realProfit: productStatsByCurrency.ARS.realProfit,
-      },
-
-      productStatsByCurrency,
-    };
   }
+
+  return {
+    period: {
+      month: normalizedMonth,
+      start,
+      end,
+    },
+
+    totals: totalsByCurrency.ARS,
+    totalsByCurrency,
+
+    productStats: {
+      publishedCount,
+      reservedCount,
+      soldCount,
+      ownedCount,
+      consignmentCount,
+      estimatedProfit: productStatsByCurrency.ARS.estimatedProfit,
+      realProfit: productStatsByCurrency.ARS.realProfit,
+    },
+
+    productStatsByCurrency,
+  };
+}
 
   private normalizeCurrency(
     value?: string | null,
