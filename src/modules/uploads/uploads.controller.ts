@@ -59,6 +59,35 @@ export class UploadsController {
     return this.uploadsService.uploadImage(file, req.user);
   }
 
+  @Post('document')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+      required: ['file'],
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: {
+        fileSize: 10 * 1024 * 1024,
+      },
+    }),
+  )
+  async uploadDocument(
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: { user: CurrentUser },
+  ) {
+    return this.uploadsService.uploadDocument(file, req.user);
+  }
+
   @Delete('image')
   @ApiBody({
     type: DeleteImageDto,
@@ -72,5 +101,20 @@ export class UploadsController {
     }
 
     return this.uploadsService.deleteImage(dto.publicId, req.user);
+  }
+
+  @Delete('document')
+  @ApiBody({
+    type: DeleteImageDto,
+  })
+  async deleteDocument(
+    @Body() dto: DeleteImageDto,
+    @Req() req: { user: CurrentUser },
+  ) {
+    if (req.user.role !== UserRole.OWNER) {
+      throw new ForbiddenException('Only OWNER can delete documents');
+    }
+
+    return this.uploadsService.deleteDocument(dto.publicId, req.user);
   }
 }

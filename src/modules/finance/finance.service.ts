@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Expense, ExpenseDocument } from '../expenses/schemas/expense.schema';
@@ -18,22 +15,30 @@ import {
 } from './schema/finance-movement.schema';
 import { CurrentUser } from '../../common/interfaces/current-user.interface';
 
+type CurrencyCode = 'ARS' | 'USD';
+
+type FinanceTotals = {
+  income: number;
+  expenses: number;
+  balance: number;
+  salesIncome: number;
+  depositsIncome: number;
+  manualExpenses: number;
+  productExtraExpenses: number;
+  vehiclePurchases: number;
+  consignmentSettlements: number;
+};
+
 type FinanceSummary = {
   period: {
     month: string;
     start: Date;
     end: Date;
   };
-  totals: {
-    income: number;
-    expenses: number;
-    balance: number;
-    salesIncome: number;
-    depositsIncome: number;
-    manualExpenses: number;
-    productExtraExpenses: number;
-    vehiclePurchases: number;
-    consignmentSettlements: number;
+  totals: FinanceTotals;
+  totalsByCurrency: {
+    ARS: FinanceTotals;
+    USD: FinanceTotals;
   };
   productStats: {
     publishedCount: number;
@@ -44,15 +49,41 @@ type FinanceSummary = {
     estimatedProfit: number;
     realProfit: number;
   };
+  productStatsByCurrency: {
+    ARS: {
+      estimatedProfit: number;
+      realProfit: number;
+    };
+    USD: {
+      estimatedProfit: number;
+      realProfit: number;
+    };
+  };
 };
+
+function createEmptyTotals(): FinanceTotals {
+  return {
+    income: 0,
+    expenses: 0,
+    balance: 0,
+    salesIncome: 0,
+    depositsIncome: 0,
+    manualExpenses: 0,
+    productExtraExpenses: 0,
+    vehiclePurchases: 0,
+    consignmentSettlements: 0,
+  };
+}
 
 @Injectable()
 export class FinanceService {
   constructor(
     @InjectModel(Expense.name)
     private readonly expenseModel: Model<ExpenseDocument>,
+
     @InjectModel(Product.name)
     private readonly productModel: Model<ProductDocument>,
+
     @InjectModel(FinanceMovement.name)
     private readonly financeMovementModel: Model<FinanceMovementDocument>,
   ) {}
@@ -71,13 +102,14 @@ export class FinanceService {
           expenseDate: { $gte: start, $lt: end },
         })
         .exec(),
+
       this.productModel.find({ businessId }).exec(),
     ]);
 
     const payloads: Array<Record<string, any>> = [];
 
     for (const expense of manualExpenses) {
-      const dedupeKey = `expense_manual:${expense.id}`;
+      const currency = this.normalizeCurrency(expense.currency, 'ARS');
 
       payloads.push({
         businessId,
@@ -86,13 +118,15 @@ export class FinanceService {
         title: expense.title,
         description: expense.description ?? expense.notes ?? null,
         amount: Number(expense.amount ?? 0),
-        currency: expense.currency,
+        currency,
         date: expense.expenseDate,
         source: 'expense',
         sourceId: expense.id,
         expenseId: expense.id,
+        productId: null,
+        productName: null,
         paymentStatus: expense.paymentStatus ?? null,
-        dedupeKey,
+        dedupeKey: `expense_manual:${expense.id}`,
         meta: {
           category: expense.category ?? null,
           expenseType: expense.type,
@@ -105,6 +139,8 @@ export class FinanceService {
     for (const product of products) {
       const productId = product.id;
       const productName = product.name;
+      const productCurrency = this.normalizeCurrency(product.currency, 'ARS');
+
       const ownershipType =
         product.ownership?.ownershipType ?? ProductOwnershipType.OWNED;
 
@@ -122,7 +158,7 @@ export class FinanceService {
           title: `Compra de unidad - ${productName}`,
           description: 'Compra de producto/unidad propia',
           amount: Number(product.ownership.purchasePrice ?? 0),
-          currency: product.currency,
+          currency: productCurrency,
           date: product.ownership.purchaseDate,
           source: 'product',
           sourceId: productId,
@@ -138,6 +174,7 @@ export class FinanceService {
       }
 
       const extraItems = product.finance?.extraExpenseItems ?? [];
+
       extraItems.forEach((item, index) => {
         const itemDate =
           item?.expenseDate ?? product.updatedAt ?? product.createdAt ?? null;
@@ -152,7 +189,7 @@ export class FinanceService {
           title: `${productName} - ${item.label}`,
           description: 'Gasto extra del producto',
           amount: Number(item.amount ?? 0),
-          currency: product.currency,
+          currency: 'ARS',
           date: itemDate,
           source: 'product',
           sourceId: productId,
@@ -171,10 +208,16 @@ export class FinanceService {
 
       if (
         product.reservation?.depositAmount != null &&
+        Number(product.reservation.depositAmount ?? 0) > 0 &&
         product.reservation?.depositDate &&
         product.reservation.depositDate >= start &&
         product.reservation.depositDate < end
       ) {
+        const depositCurrency = this.normalizeCurrency(
+          product.reservation.depositCurrency,
+          productCurrency,
+        );
+
         payloads.push({
           businessId,
           direction: FinanceMovementDirection.IN,
@@ -182,7 +225,7 @@ export class FinanceService {
           title: `Seña recibida - ${productName}`,
           description: product.reservation.notes ?? null,
           amount: Number(product.reservation.depositAmount ?? 0),
-          currency: product.reservation.depositCurrency ?? product.currency,
+          currency: depositCurrency,
           date: product.reservation.depositDate,
           source: 'product',
           sourceId: productId,
@@ -213,7 +256,7 @@ export class FinanceService {
           title: `Venta - ${productName}`,
           description: 'Venta final del producto',
           amount: Number(product.finance.finalSalePrice ?? 0),
-          currency: product.currency,
+          currency: productCurrency,
           date: product.soldAt,
           source: 'product',
           sourceId: productId,
@@ -239,7 +282,7 @@ export class FinanceService {
               title: `Liquidación consignación - ${productName}`,
               description: 'Monto a entregar al dueño consignante',
               amount: ownerExpectedAmount,
-              currency: product.currency,
+              currency: productCurrency,
               date: product.soldAt,
               source: 'product',
               sourceId: productId,
@@ -258,11 +301,93 @@ export class FinanceService {
       }
     }
 
+    const productsById = new Map<string, ProductDocument>();
+
+    for (const product of products) {
+      productsById.set(product.id, product);
+    }
+
+    const existingDepositMovements = await this.financeMovementModel
+      .find({
+        businessId,
+        type: FinanceMovementType.DEPOSIT_RECEIVED,
+      })
+      .lean()
+      .exec();
+
+    const existingRefundMovements = await this.financeMovementModel
+      .find({
+        businessId,
+        type: FinanceMovementType.DEPOSIT_REFUNDED,
+      })
+      .select('dedupeKey')
+      .lean()
+      .exec();
+
+    const existingRefundKeys = new Set(
+      existingRefundMovements.map((movement) => movement.dedupeKey),
+    );
+
+    for (const depositMovement of existingDepositMovements) {
+      const productId =
+        depositMovement.productId ||
+        depositMovement.sourceId ||
+        String((depositMovement.meta as any)?.productId ?? '');
+
+      if (!productId) continue;
+
+      const product = productsById.get(productId);
+
+      if (!product) continue;
+
+      const hasActiveDeposit =
+        product.reservation?.depositAmount != null &&
+        Number(product.reservation.depositAmount ?? 0) > 0;
+
+      if (hasActiveDeposit) continue;
+
+      if (product.status !== 'published') continue;
+
+      const refundDedupeKey = `deposit_refunded:${depositMovement.dedupeKey}`;
+
+      if (existingRefundKeys.has(refundDedupeKey)) continue;
+
+      const refundDate = product.updatedAt ?? new Date();
+
+      if (refundDate < start || refundDate >= end) continue;
+
+      payloads.push({
+        businessId,
+        direction: FinanceMovementDirection.OUT,
+        type: FinanceMovementType.DEPOSIT_REFUNDED,
+        title: `Seña devuelta - ${depositMovement.productName ?? product.name}`,
+        description: 'Devolución de seña',
+        amount: Number(depositMovement.amount ?? 0),
+        currency: this.normalizeCurrency(depositMovement.currency, 'ARS'),
+        date: refundDate,
+        source: 'product',
+        sourceId: productId,
+        productId,
+        productName: depositMovement.productName ?? product.name,
+        dedupeKey: refundDedupeKey,
+        meta: {
+          originalDepositMovementId: String((depositMovement as any)._id),
+          originalDepositDedupeKey: depositMovement.dedupeKey,
+          reason: 'deposit_returned_and_product_republished',
+        },
+        createdBy: userId,
+        updatedBy: userId,
+      });
+    }
+
     for (const payload of payloads) {
       const { createdBy, ...restPayload } = payload;
 
       await this.financeMovementModel.updateOne(
-        { dedupeKey: payload.dedupeKey },
+        {
+          businessId,
+          dedupeKey: payload.dedupeKey,
+        },
         {
           $set: {
             ...restPayload,
@@ -288,6 +413,8 @@ export class FinanceService {
     const { start, end } = this.getMonthRange(month);
     const businessId = this.toObjectId(currentUser.businessId, 'businessId');
 
+    await this.syncMovements(currentUser, month);
+
     return this.financeMovementModel
       .find({
         businessId,
@@ -307,53 +434,79 @@ export class FinanceService {
     const { start, end, normalizedMonth } = this.getMonthRange(month);
     const businessId = this.toObjectId(currentUser.businessId, 'businessId');
 
+    await this.syncMovements(currentUser, month);
+
     const [movements, products] = await Promise.all([
       this.financeMovementModel
-        .find({ businessId, date: { $gte: start, $lt: end } })
+        .find({
+          businessId,
+          date: { $gte: start, $lt: end },
+        })
         .lean()
         .exec(),
+
       this.productModel.find({ businessId }).exec(),
     ]);
 
-    let income = 0;
-    let expenses = 0;
-    let salesIncome = 0;
-    let depositsIncome = 0;
-    let manualExpensesTotal = 0;
-    let productExtraExpensesTotal = 0;
-    let vehiclePurchasesTotal = 0;
-    let consignmentSettlementsTotal = 0;
+    const totalsByCurrency = {
+      ARS: createEmptyTotals(),
+      USD: createEmptyTotals(),
+    };
 
     for (const movement of movements) {
       const amount = Number(movement.amount ?? 0);
+      const currency = this.normalizeCurrency(movement.currency, 'ARS');
+      const totals = totalsByCurrency[currency];
 
-      if (movement.direction === FinanceMovementDirection.IN) income += amount;
-      if (movement.direction === FinanceMovementDirection.OUT) expenses += amount;
+      if (movement.direction === FinanceMovementDirection.IN) {
+        totals.income += amount;
+      }
+
+      if (movement.direction === FinanceMovementDirection.OUT) {
+        totals.expenses += amount;
+      }
 
       switch (movement.type) {
         case FinanceMovementType.PRODUCT_SALE:
-          salesIncome += amount;
+          totals.salesIncome += amount;
           break;
+
         case FinanceMovementType.DEPOSIT_RECEIVED:
-          depositsIncome += amount;
+          totals.depositsIncome += amount;
           break;
+
         case FinanceMovementType.EXPENSE_MANUAL:
-          manualExpensesTotal += amount;
+          totals.manualExpenses += amount;
           break;
+
         case FinanceMovementType.PRODUCT_EXTRA_EXPENSE:
-          productExtraExpensesTotal += amount;
+          totals.productExtraExpenses += amount;
           break;
+
         case FinanceMovementType.VEHICLE_PURCHASE:
-          vehiclePurchasesTotal += amount;
+          totals.vehiclePurchases += amount;
           break;
+
         case FinanceMovementType.CONSIGNMENT_SETTLEMENT:
-          consignmentSettlementsTotal += amount;
+          totals.consignmentSettlements += amount;
           break;
       }
     }
 
-    const publishedCount = products.filter((p) => p.status === 'published').length;
-    const reservedCount = products.filter((p) => p.status === 'reserved').length;
+    totalsByCurrency.ARS.balance =
+      totalsByCurrency.ARS.income - totalsByCurrency.ARS.expenses;
+
+    totalsByCurrency.USD.balance =
+      totalsByCurrency.USD.income - totalsByCurrency.USD.expenses;
+
+    const publishedCount = products.filter(
+      (p) => p.status === 'published',
+    ).length;
+
+    const reservedCount = products.filter(
+      (p) => p.status === 'reserved',
+    ).length;
+
     const soldCount = products.filter((p) => p.status === 'sold').length;
 
     const ownedCount = products.filter(
@@ -366,14 +519,19 @@ export class FinanceService {
       (p) => p.ownership?.ownershipType === ProductOwnershipType.CONSIGNMENT,
     ).length;
 
-    let estimatedProfit = 0;
-    let realProfit = 0;
+    const productStatsByCurrency = {
+      ARS: {
+        estimatedProfit: 0,
+        realProfit: 0,
+      },
+      USD: {
+        estimatedProfit: 0,
+        realProfit: 0,
+      },
+    };
 
     for (const product of products) {
-      const extraExpensesTotal = (product.finance?.extraExpenseItems ?? []).reduce(
-        (acc, item) => acc + Number(item.amount ?? 0),
-        0,
-      );
+      const productCurrency = this.normalizeCurrency(product.currency, 'ARS');
 
       const ownershipType =
         product.ownership?.ownershipType ?? ProductOwnershipType.OWNED;
@@ -388,11 +546,50 @@ export class FinanceService {
           ? Number(product.finance.estimatedSalePrice)
           : Number(product.salePrice ?? 0);
 
-      estimatedProfit += estimatedSale - baseCost - extraExpensesTotal;
+      const finalSale =
+        product.finance?.finalSalePrice != null
+          ? Number(product.finance.finalSalePrice)
+          : null;
 
-      if (product.finance?.finalSalePrice != null) {
-        realProfit +=
-          Number(product.finance.finalSalePrice) - baseCost - extraExpensesTotal;
+      const extraExpensesTotal = (
+        product.finance?.extraExpenseItems ?? []
+      ).reduce((acc, item) => acc + Number(item.amount ?? 0), 0);
+
+      if (productCurrency === 'USD') {
+        productStatsByCurrency.USD.estimatedProfit += estimatedSale - baseCost;
+
+        if (
+          finalSale != null &&
+          product.soldAt &&
+          product.soldAt >= start &&
+          product.soldAt < end
+        ) {
+          productStatsByCurrency.USD.realProfit += finalSale - baseCost;
+        }
+
+        productStatsByCurrency.ARS.estimatedProfit -= extraExpensesTotal;
+
+        if (
+          finalSale != null &&
+          product.soldAt &&
+          product.soldAt >= start &&
+          product.soldAt < end
+        ) {
+          productStatsByCurrency.ARS.realProfit -= extraExpensesTotal;
+        }
+      } else {
+        productStatsByCurrency.ARS.estimatedProfit +=
+          estimatedSale - baseCost - extraExpensesTotal;
+
+        if (
+          finalSale != null &&
+          product.soldAt &&
+          product.soldAt >= start &&
+          product.soldAt < end
+        ) {
+          productStatsByCurrency.ARS.realProfit +=
+            finalSale - baseCost - extraExpensesTotal;
+        }
       }
     }
 
@@ -402,27 +599,36 @@ export class FinanceService {
         start,
         end,
       },
-      totals: {
-        income,
-        expenses,
-        balance: income - expenses,
-        salesIncome,
-        depositsIncome,
-        manualExpenses: manualExpensesTotal,
-        productExtraExpenses: productExtraExpensesTotal,
-        vehiclePurchases: vehiclePurchasesTotal,
-        consignmentSettlements: consignmentSettlementsTotal,
-      },
+
+      totals: totalsByCurrency.ARS,
+      totalsByCurrency,
+
       productStats: {
         publishedCount,
         reservedCount,
         soldCount,
         ownedCount,
         consignmentCount,
-        estimatedProfit,
-        realProfit,
+        estimatedProfit: productStatsByCurrency.ARS.estimatedProfit,
+        realProfit: productStatsByCurrency.ARS.realProfit,
       },
+
+      productStatsByCurrency,
     };
+  }
+
+  private normalizeCurrency(
+    value?: string | null,
+    fallback: CurrencyCode = 'ARS',
+  ): CurrencyCode {
+    const normalized = String(value ?? '')
+      .trim()
+      .toUpperCase();
+
+    if (normalized === 'USD') return 'USD';
+    if (normalized === 'ARS') return 'ARS';
+
+    return fallback;
   }
 
   private getMonthRange(month?: string) {
@@ -439,6 +645,7 @@ export class FinanceService {
     }
 
     const match = /^(\d{4})-(\d{2})$/.exec(month);
+
     if (!match) {
       throw new BadRequestException('month must have YYYY-MM format');
     }

@@ -13,6 +13,7 @@ import { CurrentUser } from '../../common/interfaces/current-user.interface';
 import { BusinessesService } from '../businesses/businesses.service';
 import {
   CreateProductDto,
+  ProductDocumentDto,
   ProductExtraExpenseItemDto,
   ProductImageDto,
   ProductOwnershipDto,
@@ -43,7 +44,7 @@ export class ProductsService {
     private readonly productModel: Model<ProductDocument>,
     private readonly businessesService: BusinessesService,
     private readonly movementsService: MovementsService,
-  ) {}
+  ) { }
 
   async create(dto: CreateProductDto, currentUser: CurrentUser) {
     const businessId = this.toObjectId(currentUser.businessId, 'businessId');
@@ -91,6 +92,7 @@ export class ProductsService {
       category: dto.category ?? null,
       tags: this.normalizeTags(dto.tags ?? []),
       images: this.normalizeImages(dto.images ?? []),
+      documents: this.normalizeDocuments(dto.documents ?? []),
       variants: normalizedVariants,
       vehicleDetails:
         productType === ProductType.AUTO
@@ -108,19 +110,19 @@ export class ProductsService {
       finance:
         currentUser.role === UserRole.OWNER
           ? {
-              costPrice: dto.costPrice ?? null,
-              estimatedSalePrice: dto.estimatedSalePrice ?? null,
-              finalSalePrice: dto.finalSalePrice ?? null,
-              extraExpenseItems,
-              internalNotes: dto.internalNotes ?? null,
-            }
+            costPrice: dto.costPrice ?? null,
+            estimatedSalePrice: dto.estimatedSalePrice ?? null,
+            finalSalePrice: dto.finalSalePrice ?? null,
+            extraExpenseItems,
+            internalNotes: dto.internalNotes ?? null,
+          }
           : {
-              costPrice: null,
-              estimatedSalePrice: null,
-              finalSalePrice: null,
-              extraExpenseItems: [],
-              internalNotes: null,
-            },
+            costPrice: null,
+            estimatedSalePrice: null,
+            finalSalePrice: null,
+            extraExpenseItems: [],
+            internalNotes: null,
+          },
       createdBy: this.toObjectId(currentUser.sub, 'userId'),
       updatedBy: this.toObjectId(currentUser.sub, 'userId'),
     });
@@ -227,6 +229,9 @@ export class ProductsService {
     if (dto.tags !== undefined) product.tags = this.normalizeTags(dto.tags);
     if (dto.images !== undefined) {
       product.images = this.normalizeImages(dto.images);
+    }
+    if (dto.documents !== undefined) {
+      product.documents = this.normalizeDocuments(dto.documents);
     }
 
     const currentProductType = product.productType;
@@ -412,139 +417,236 @@ export class ProductsService {
     return this.serializeForRole(product, currentUser.role);
   }
 
-  async updateStatus(
-    id: string,
-    dto: UpdateProductStatusDto,
-    currentUser: CurrentUser,
-  ) {
-    const product = await this.productModel.findOne({
-      _id: this.toObjectId(id, 'productId'),
-      businessId: this.toObjectId(currentUser.businessId, 'businessId'),
+async updateStatus(
+  id: string,
+  dto: UpdateProductStatusDto,
+  currentUser: CurrentUser,
+) {
+  const product = await this.productModel.findOne({
+    _id: this.toObjectId(id, 'productId'),
+    businessId: this.toObjectId(currentUser.businessId, 'businessId'),
+  });
+
+  if (!product) {
+    throw new NotFoundException('Product not found');
+  }
+
+  const oldStatus = product.status;
+
+  const previousReservation = {
+    depositAmount: product.reservation?.depositAmount ?? null,
+    depositCurrency: product.reservation?.depositCurrency ?? null,
+    depositDate: product.reservation?.depositDate ?? null,
+    customerName: product.reservation?.customerName ?? null,
+    customerPhone: product.reservation?.customerPhone ?? null,
+    notes: product.reservation?.notes ?? null,
+  };
+
+  const previousDepositAmount = Number(previousReservation.depositAmount ?? 0);
+
+  if (!product.finance) {
+    product.finance = {} as any;
+  }
+
+  const isVariantSale =
+    dto.status === ProductStatus.SOLD &&
+    dto.variantIndex !== undefined &&
+    this.hasVariants(product);
+
+  if (isVariantSale) {
+    const variantIndex = dto.variantIndex;
+
+    if (variantIndex === undefined) {
+      throw new BadRequestException('Variante inválida');
+    }
+
+    const quantity = dto.quantity ?? 1;
+
+    const movementDate =
+      dto.soldAt !== undefined
+        ? (this.parseDateOrNull(dto.soldAt, 'soldAt') ?? new Date())
+        : new Date();
+
+    const soldVariant = this.sellVariantUnits({
+      product,
+      variantIndex,
+      quantity,
+      movementDate,
     });
-
-    if (!product) {
-      throw new NotFoundException('Product not found');
-    }
-
-    const oldStatus = product.status;
-
-    const isVariantSale =
-      dto.status === ProductStatus.SOLD &&
-      dto.variantIndex !== undefined &&
-      this.hasVariants(product);
-
-    if (isVariantSale) {
-      const quantity = dto.quantity ?? 1;
-      const variantIndex = dto.variantIndex!;
-      const movementDate =
-        dto.soldAt !== undefined
-          ? (this.parseDateOrNull(dto.soldAt, 'soldAt') ?? new Date())
-          : new Date();
-
-      const soldVariant = this.sellVariantUnits({
-        product,
-        variantIndex,
-        quantity,
-        movementDate,
-      });
-
-      if (dto.finalSalePrice !== undefined) {
-        product.finance.finalSalePrice = dto.finalSalePrice;
-      }
-
-      product.updatedBy = this.toObjectId(currentUser.sub, 'userId');
-      await product.save();
-
-      const unitPrice = Number(
-        dto.finalSalePrice ?? soldVariant?.salePrice ?? product.salePrice ?? 0,
-      );
-
-      await this.movementsService.createMovement(
-        {
-          type: 'product_sold',
-          title: `Venta de variante: ${product.name}`,
-          description: `${this.getVariantLabel(soldVariant, variantIndex)} x${quantity}`,
-          meta: {
-            productId: product.id,
-            variantIndex,
-            quantity,
-            variant: {
-              size: soldVariant?.size ?? null,
-              color: soldVariant?.color ?? null,
-              sku: soldVariant?.sku ?? null,
-            },
-            remainingProductStock: product.stock,
-          },
-          amount: unitPrice * quantity,
-          direction: 'in',
-          date: movementDate,
-        },
-        currentUser,
-      );
-
-      return this.serializeForRole(product, currentUser.role);
-    }
-
-    const nextStatus = dto.status;
-    const nextIsPublished = this.resolvePublishedFlag(
-      nextStatus,
-      dto.isPublished ?? product.isPublished,
-    );
-
-    product.status = nextStatus;
-    product.isPublished = nextIsPublished;
-    product.updatedBy = this.toObjectId(currentUser.sub, 'userId');
-
-    if (
-      nextStatus === ProductStatus.PUBLISHED &&
-      nextIsPublished &&
-      !product.publishedAt
-    ) {
-      product.publishedAt = new Date();
-    }
-
-    if (nextStatus === ProductStatus.SOLD) {
-      product.soldAt =
-        dto.soldAt !== undefined
-          ? this.parseDateOrNull(dto.soldAt, 'soldAt')
-          : product.soldAt ?? new Date();
-    } else {
-      product.soldAt = null;
-    }
-
-    if (dto.clearReservation) {
-      product.reservation = this.emptyReservation();
-    } else if (dto.reservation !== undefined) {
-      product.reservation = this.mergeReservation(
-        product.reservation,
-        dto.reservation,
-      );
-    }
 
     if (dto.finalSalePrice !== undefined) {
       product.finance.finalSalePrice = dto.finalSalePrice;
     }
 
+    if (dto.clearReservation) {
+      product.reservation = this.emptyReservation();
+    }
+
+    product.updatedBy = this.toObjectId(currentUser.sub, 'userId');
+
     await product.save();
+
+    const unitPrice = Number(
+      dto.finalSalePrice ?? soldVariant?.salePrice ?? product.salePrice ?? 0,
+    );
 
     await this.movementsService.createMovement(
       {
-        type:
-          nextStatus === ProductStatus.SOLD
-            ? 'product_sold'
-            : 'product_status_updated',
-        title: `Cambio de estado de producto: ${product.name}`,
-        description: `De: ${oldStatus} a: ${nextStatus}`,
-        meta: { productId: product.id },
-        amount: product.salePrice,
-        direction: nextStatus === ProductStatus.SOLD ? 'in' : 'neutral',
-        date: new Date(),
+        type: 'product_sold',
+        title: `Venta de variante: ${product.name}`,
+        description: `${this.getVariantLabel(
+          soldVariant,
+          variantIndex,
+        )} x${quantity}`,
+        meta: {
+          productId: product.id,
+          sourceId: product.id,
+          currency: product.currency,
+          previousStatus: oldStatus,
+          nextStatus: product.status,
+          variantIndex,
+          quantity,
+          variant: {
+            size: soldVariant?.size ?? null,
+            color: soldVariant?.color ?? null,
+            sku: soldVariant?.sku ?? null,
+          },
+          remainingProductStock: product.stock,
+          clearedReservation: dto.clearReservation === true,
+        },
+        amount: unitPrice * quantity,
+        direction: 'in',
+        date: movementDate,
       },
       currentUser,
     );
 
     return this.serializeForRole(product, currentUser.role);
   }
+
+  const nextStatus = dto.status;
+
+  const nextIsPublished = this.resolvePublishedFlag(
+    nextStatus,
+    dto.isPublished ?? product.isPublished,
+  );
+
+  product.status = nextStatus;
+  product.isPublished = nextIsPublished;
+  product.updatedBy = this.toObjectId(currentUser.sub, 'userId');
+
+  if (nextStatus === ProductStatus.PUBLISHED && nextIsPublished) {
+    product.publishedAt = product.publishedAt ?? new Date();
+  }
+
+  if (nextStatus === ProductStatus.SOLD) {
+    product.soldAt =
+      dto.soldAt !== undefined
+        ? this.parseDateOrNull(dto.soldAt, 'soldAt')
+        : product.soldAt ?? new Date();
+  } else {
+    product.soldAt = null;
+  }
+
+  if (dto.clearReservation) {
+    product.reservation = this.emptyReservation();
+  } else if (dto.reservation !== undefined) {
+    product.reservation = this.mergeReservation(
+      product.reservation,
+      dto.reservation,
+    );
+  }
+
+  if (dto.finalSalePrice !== undefined) {
+    product.finance.finalSalePrice = dto.finalSalePrice;
+  }
+
+  await product.save();
+
+  const nextDepositAmount = Number(product.reservation?.depositAmount ?? 0);
+
+  const isDepositRefund =
+    dto.clearReservation === true &&
+    nextStatus === ProductStatus.PUBLISHED &&
+    previousDepositAmount > 0;
+
+  const isDepositReceived =
+    nextStatus === ProductStatus.RESERVED &&
+    oldStatus !== ProductStatus.RESERVED &&
+    nextDepositAmount > 0;
+
+  let movementType = 'product_status_updated';
+  let movementTitle = `Cambio de estado de producto: ${product.name}`;
+  let movementDescription = `De: ${oldStatus} a: ${nextStatus}`;
+  let movementAmount = Number(product.salePrice ?? 0);
+  let movementDirection: 'in' | 'out' | 'neutral' = 'neutral';
+  let movementDate = new Date();
+  let movementCurrency = product.currency ?? 'ARS';
+
+  if (nextStatus === ProductStatus.SOLD) {
+    movementType = 'product_sold';
+    movementTitle = `Producto vendido: ${product.name}`;
+    movementDescription = `Venta registrada`;
+    movementAmount = Number(
+      dto.finalSalePrice ??
+        product.finance?.finalSalePrice ??
+        product.salePrice ??
+        0,
+    );
+    movementDirection = 'in';
+    movementDate = product.soldAt ?? new Date();
+    movementCurrency = product.currency ?? 'ARS';
+  }
+
+  if (isDepositReceived) {
+    movementType = 'deposit_received';
+    movementTitle = `Seña recibida: ${product.name}`;
+    movementDescription = product.reservation?.customerName
+      ? `Cliente: ${product.reservation.customerName}`
+      : `Producto señado`;
+    movementAmount = nextDepositAmount;
+    movementDirection = 'in';
+    movementDate = product.reservation?.depositDate ?? new Date();
+    movementCurrency =
+      product.reservation?.depositCurrency ?? product.currency ?? 'ARS';
+  }
+
+  if (isDepositRefund) {
+    movementType = 'deposit_refunded';
+    movementTitle = `Seña devuelta: ${product.name}`;
+    movementDescription = previousReservation.customerName
+      ? `Cliente: ${previousReservation.customerName}`
+      : `Se devolvió la seña y el producto volvió a publicado`;
+    movementAmount = previousDepositAmount;
+    movementDirection = 'out';
+    movementDate = new Date();
+    movementCurrency =
+      previousReservation.depositCurrency ?? product.currency ?? 'ARS';
+  }
+
+  await this.movementsService.createMovement(
+    {
+      type: movementType,
+      title: movementTitle,
+      description: movementDescription,
+      meta: {
+        productId: product.id,
+        sourceId: product.id,
+        currency: movementCurrency,
+        previousStatus: oldStatus,
+        nextStatus: product.status,
+        previousReservation,
+        clearReservation: dto.clearReservation === true,
+      },
+      amount: movementAmount,
+      direction: movementDirection,
+      date: movementDate,
+    },
+    currentUser,
+  );
+
+  return this.serializeForRole(product, currentUser.role);
+}
 
   async remove(id: string, currentUser: CurrentUser) {
     const product = await this.productModel.findOne({
@@ -580,6 +682,23 @@ export class ProductsService {
             await cloudinary.uploader.destroy(image.publicId);
           } catch (err) {
             console.warn(`No se pudo eliminar la imagen ${image.publicId}`, err);
+          }
+        }
+      }
+    }
+
+    if (product.documents && product.documents.length > 0) {
+      for (const document of product.documents) {
+        if (document.publicId) {
+          try {
+            await cloudinary.uploader.destroy(document.publicId, {
+              resource_type: 'raw',
+            });
+          } catch (err) {
+            console.warn(
+              `No se pudo eliminar el documento ${document.publicId}`,
+              err,
+            );
           }
         }
       }
@@ -634,6 +753,7 @@ export class ProductsService {
         publicEmail: (business as any).publicEmail ?? null,
       },
       products: products.map((product) => this.serializePublic(product)),
+
     };
   }
 
@@ -1093,9 +1213,9 @@ export class ProductsService {
         expenseDate:
           item.expenseDate !== undefined
             ? this.parseDateOrNull(
-                item.expenseDate,
-                'extraExpenseItems.expenseDate',
-              )
+              item.expenseDate,
+              'extraExpenseItems.expenseDate',
+            )
             : null,
       }))
       .filter((item) => item.label && item.amount >= 0);
@@ -1352,12 +1472,14 @@ export class ProductsService {
       coverImage,
       images,
       variants,
+      documents: [],
       vehicleDetails: this.serializeVehicleDetails(product.vehicleDetails),
       ownership: this.serializeOwnership(product.ownership),
       status: product.status,
       isPublished: product.isPublished,
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
+
     };
   }
 
@@ -1368,6 +1490,9 @@ export class ProductsService {
       publishedAt: product.publishedAt ?? null,
       soldAt: product.soldAt ?? null,
       reservation: this.serializeReservation(product.reservation),
+      documents: (product.documents ?? []).map((document) =>
+        this.serializeDocument(document),
+      ),
     };
 
     if (role !== UserRole.OWNER) {
@@ -1380,10 +1505,55 @@ export class ProductsService {
     const costPrice = product.finance?.costPrice ?? null;
     const estimatedSalePrice = product.finance?.estimatedSalePrice ?? null;
     const finalSalePrice = product.finance?.finalSalePrice ?? null;
+
     const extraExpenseItems = (product.finance?.extraExpenseItems ?? []).map(
       (item) => this.serializeExtraExpenseItem(item),
     );
+
     const extraExpensesTotal = this.sumExtraExpenseItems(extraExpenseItems);
+
+    const ownershipType =
+      base.ownership.ownershipType ?? ProductOwnershipType.OWNED;
+
+    const ownerExpectedAmount = base.ownership.ownerExpectedAmount ?? 0;
+
+    const baseCost =
+      ownershipType === ProductOwnershipType.CONSIGNMENT
+        ? ownerExpectedAmount
+        : costPrice ?? 0;
+
+    const saleCurrency = base.currency === 'USD' ? 'USD' : 'ARS';
+
+    const estimatedSale =
+      estimatedSalePrice ?? base.salePrice ?? 0;
+
+    const estimatedProfitByCurrency = {
+      ARS: 0,
+      USD: 0,
+    };
+
+    const realProfitByCurrency = {
+      ARS: 0,
+      USD: 0,
+    };
+
+    if (saleCurrency === 'USD') {
+      estimatedProfitByCurrency.USD = estimatedSale - baseCost;
+      estimatedProfitByCurrency.ARS = -extraExpensesTotal;
+
+      if (finalSalePrice != null && finalSalePrice > 0) {
+        realProfitByCurrency.USD = finalSalePrice - baseCost;
+        realProfitByCurrency.ARS = -extraExpensesTotal;
+      }
+    } else {
+      estimatedProfitByCurrency.ARS =
+        estimatedSale - baseCost - extraExpensesTotal;
+
+      if (finalSalePrice != null && finalSalePrice > 0) {
+        realProfitByCurrency.ARS =
+          finalSalePrice - baseCost - extraExpensesTotal;
+      }
+    }
 
     return {
       ...base,
@@ -1395,21 +1565,61 @@ export class ProductsService {
         extraExpenseItems,
         extraExpensesTotal,
         internalNotes: product.finance?.internalNotes ?? null,
+
         estimatedProfit:
-          costPrice != null
-            ? (estimatedSalePrice ?? base.salePrice) -
-              costPrice -
-              extraExpensesTotal
-            : null,
+          saleCurrency === 'ARS'
+            ? estimatedProfitByCurrency.ARS
+            : estimatedProfitByCurrency.USD,
+
         realProfit:
           finalSalePrice != null && finalSalePrice > 0
-            ? finalSalePrice -
-              (base.ownership.ownershipType === ProductOwnershipType.CONSIGNMENT
-                ? (base.ownership.ownerExpectedAmount ?? 0)
-                : (costPrice ?? 0)) -
-              extraExpensesTotal
+            ? saleCurrency === 'ARS'
+              ? realProfitByCurrency.ARS
+              : realProfitByCurrency.USD
             : null,
+
+        estimatedProfitByCurrency,
+        realProfitByCurrency,
       },
+    };
+  }
+
+private normalizeDocuments(documents: ProductDocumentDto[] = []) {
+  return documents
+    .map((document) => {
+      const uploadedAt =
+        document.uploadedAt !== undefined
+          ? this.parseDateOrNull(document.uploadedAt, 'documents.uploadedAt')
+          : new Date();
+
+      return {
+        label: document.label?.trim(),
+        type: document.type?.trim(),
+        url: document.url,
+        publicId: document.publicId,
+        fileName: document.fileName?.trim() || null,
+        mimeType: document.mimeType?.trim() || null,
+        uploadedAt: uploadedAt ?? new Date(),
+      };
+    })
+    .filter(
+      (document) =>
+        document.label &&
+        document.type &&
+        document.url &&
+        document.publicId,
+    );
+}
+
+  private serializeDocument(document: any) {
+    return {
+      label: document?.label ?? '',
+      type: document?.type ?? '',
+      url: document?.url ?? '',
+      publicId: document?.publicId ?? '',
+      fileName: document?.fileName ?? null,
+      mimeType: document?.mimeType ?? null,
+      uploadedAt: document?.uploadedAt ?? null,
     };
   }
 }

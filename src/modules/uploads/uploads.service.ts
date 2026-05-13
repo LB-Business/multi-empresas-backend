@@ -19,12 +19,20 @@ import {
 
 @Injectable()
 export class UploadsService {
-  private readonly allowedMimeTypes = [
+  private readonly allowedImageMimeTypes = [
     'image/jpeg',
     'image/jpg',
     'image/png',
     'image/webp',
     'image/avif',
+  ];
+
+  private readonly allowedDocumentMimeTypes = [
+    'application/pdf',
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
   ];
 
   constructor(
@@ -85,6 +93,52 @@ export class UploadsService {
     };
   }
 
+  async uploadDocument(file: Express.Multer.File, currentUser: CurrentUser) {
+    if (!currentUser?.businessId) {
+      throw new ForbiddenException('User is not linked to a business');
+    }
+
+    if (
+      ![UserRole.OWNER, UserRole.ADMIN, UserRole.EDITOR].includes(
+        currentUser.role,
+      )
+    ) {
+      throw new ForbiddenException('You are not allowed to upload documents');
+    }
+
+    this.validateDocumentFile(file);
+
+    const business = await this.getBusinessOrFail(currentUser.businessId);
+    const folder = `${this.buildBusinessFolder(business.slug)}/documents`;
+
+    const safeFileName = this.sanitizeFileName(file.originalname);
+
+    const result = await this.uploadBuffer(file.buffer, {
+      folder,
+      resource_type: 'raw',
+      overwrite: false,
+      unique_filename: true,
+      use_filename: true,
+      filename_override: safeFileName,
+    });
+
+    return {
+      url: result.secure_url,
+      publicId: result.public_id,
+      folder,
+      fileName: file.originalname,
+      mimeType: file.mimetype,
+      bytes: result.bytes,
+      format: result.format ?? null,
+      uploadedAt: new Date().toISOString(),
+      business: {
+        id: business.id,
+        slug: business.slug,
+        name: business.name,
+      },
+    };
+  }
+
   async deleteImage(publicId: string, currentUser: CurrentUser) {
     if (!currentUser?.businessId) {
       throw new ForbiddenException('User is not linked to a business');
@@ -137,14 +191,85 @@ export class UploadsService {
     };
   }
 
+  async deleteDocument(publicId: string, currentUser: CurrentUser) {
+    if (!currentUser?.businessId) {
+      throw new ForbiddenException('User is not linked to a business');
+    }
+
+    if (currentUser.role !== UserRole.OWNER) {
+      throw new ForbiddenException('Only OWNER can delete documents');
+    }
+
+    if (!publicId || typeof publicId !== 'string') {
+      throw new BadRequestException('publicId is required');
+    }
+
+    const business = await this.getBusinessOrFail(currentUser.businessId);
+    const expectedPrefix = `${this.buildBusinessFolder(business.slug)}/documents/`;
+
+    if (!publicId.startsWith(expectedPrefix)) {
+      throw new ForbiddenException(
+        'You can only delete documents from your own business folder',
+      );
+    }
+
+    const result = await cloudinary.uploader.destroy(publicId, {
+      resource_type: 'raw',
+      invalidate: true,
+    });
+
+    if (!result || !('result' in result)) {
+      throw new BadRequestException('Unexpected Cloudinary delete response');
+    }
+
+    if (result.result !== 'ok' && result.result !== 'not found') {
+      throw new BadRequestException(
+        `Cloudinary could not delete the document: ${result.result}`,
+      );
+    }
+
+    return {
+      message:
+        result.result === 'ok'
+          ? 'Document deleted successfully'
+          : 'Document not found in Cloudinary',
+      publicId,
+      result: result.result,
+      business: {
+        id: business.id,
+        slug: business.slug,
+        name: business.name,
+      },
+    };
+  }
+
   private validateImageFile(file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException('File is required');
     }
 
-    if (!file.mimetype || !this.allowedMimeTypes.includes(file.mimetype)) {
+    if (!file.mimetype || !this.allowedImageMimeTypes.includes(file.mimetype)) {
       throw new BadRequestException(
         'Only JPG, JPEG, PNG, WEBP or AVIF images are allowed',
+      );
+    }
+
+    if (!file.buffer || file.buffer.length === 0) {
+      throw new BadRequestException('Invalid file');
+    }
+  }
+
+  private validateDocumentFile(file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+
+    if (
+      !file.mimetype ||
+      !this.allowedDocumentMimeTypes.includes(file.mimetype)
+    ) {
+      throw new BadRequestException(
+        'Only PDF, JPG, JPEG, PNG or WEBP documents are allowed',
       );
     }
 
@@ -170,7 +295,8 @@ export class UploadsService {
   }
 
   private getBaseFolder() {
-    const raw = this.configService.get<string>('CLOUDINARY_FOLDER') || 'businesses';
+    const raw =
+      this.configService.get<string>('CLOUDINARY_FOLDER') || 'businesses';
 
     return raw
       .replace(/\\/g, '/')
@@ -189,6 +315,19 @@ export class UploadsService {
       .replace(/-+$/, '');
   }
 
+  private sanitizeFileName(value: string) {
+    const cleaned = value
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-_.]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+/, '')
+      .replace(/-+$/, '');
+
+    return cleaned || 'documento';
+  }
+
   private buildBusinessFolder(slug: string) {
     const safeSlug = this.sanitizePathSegment(slug || 'general');
     return `${this.getBaseFolder()}/${safeSlug}`;
@@ -199,17 +338,20 @@ export class UploadsService {
     options: Record<string, any>,
   ): Promise<UploadApiResponse> {
     return new Promise((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(options, (error, result) => {
-        if (error) {
-          return reject(error);
-        }
+      const stream = cloudinary.uploader.upload_stream(
+        options,
+        (error, result) => {
+          if (error) {
+            return reject(error);
+          }
 
-        if (!result) {
-          return reject(new BadRequestException('Cloudinary upload failed'));
-        }
+          if (!result) {
+            return reject(new BadRequestException('Cloudinary upload failed'));
+          }
 
-        resolve(result);
-      });
+          resolve(result);
+        },
+      );
 
       Readable.from(buffer).pipe(stream);
     });

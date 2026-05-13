@@ -74,11 +74,7 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current logged-in user' })
   async me(@CurrentUserDecorator() user: CurrentUser) {
-    const fullUser = await this.usersService.findById(user.sub);
-
-    return {
-      user: this.usersService.toSafeUser(fullUser),
-    };
+    return this.authService.me(user);
   }
 
   @Post('logout')

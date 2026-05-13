@@ -83,24 +83,30 @@ export class BusinessesService {
     const updatedBusiness = await this.businessModel.findByIdAndUpdate(
       currentUser.businessId,
       {
-        ...(dto.name !== undefined ? { name: dto.name } : {}),
+        ...(dto.name !== undefined
+          ? { name: this.normalizeNullableString(dto.name) }
+          : {}),
         ...(normalizedSlug !== undefined ? { slug: normalizedSlug } : {}),
-        ...(dto.logoUrl !== undefined ? { logoUrl: dto.logoUrl } : {}),
+        ...(dto.logoUrl !== undefined
+          ? { logoUrl: this.normalizeNullableString(dto.logoUrl) }
+          : {}),
         ...(dto.contactPhone !== undefined
-          ? { contactPhone: dto.contactPhone }
+          ? { contactPhone: this.normalizeNullableString(dto.contactPhone) }
           : {}),
         ...(dto.publicEmail !== undefined
-          ? { publicEmail: dto.publicEmail }
+          ? { publicEmail: this.normalizeNullableString(dto.publicEmail) }
           : {}),
-        ...(dto.address !== undefined ? { address: dto.address } : {}),
+        ...(dto.address !== undefined
+          ? { address: this.normalizeNullableString(dto.address) }
+          : {}),
         ...(dto.description !== undefined
-          ? { description: dto.description }
+          ? { description: this.normalizeNullableString(dto.description) }
           : {}),
         ...(dto.primaryColor !== undefined
-          ? { primaryColor: dto.primaryColor }
+          ? { primaryColor: this.normalizeNullableString(dto.primaryColor) }
           : {}),
         ...(dto.secondaryColor !== undefined
-          ? { secondaryColor: dto.secondaryColor }
+          ? { secondaryColor: this.normalizeNullableString(dto.secondaryColor) }
           : {}),
       },
       { new: true },
@@ -111,6 +117,43 @@ export class BusinessesService {
     }
 
     return updatedBusiness;
+  }
+
+  async getPublicBusinessProfile(slug: string) {
+    const normalizedSlug = this.normalizeSlug(slug);
+
+    const business = await this.businessModel
+      .findOne({
+        slug: normalizedSlug,
+        isActive: true,
+      })
+      .select(
+        '_id name slug logoUrl contactPhone publicEmail address description primaryColor secondaryColor businessType currency timezone domain isActive',
+      )
+      .lean();
+
+    if (!business) {
+      throw new NotFoundException('Business not found');
+    }
+
+    return {
+      id: String(business._id),
+      name: business.name,
+      slug: business.slug,
+      logoUrl: business.logoUrl ?? null,
+      contactPhone: business.contactPhone ?? null,
+      whatsappUrl: this.buildWhatsappUrl(business.contactPhone),
+      publicEmail: business.publicEmail ?? null,
+      address: business.address ?? null,
+      description: business.description ?? null,
+      primaryColor: business.primaryColor ?? null,
+      secondaryColor: business.secondaryColor ?? null,
+      businessType: business.businessType ?? null,
+      currency: business.currency ?? 'ARS',
+      timezone: business.timezone ?? 'America/Argentina/Buenos_Aires',
+      domain: business.domain ?? null,
+      isActive: business.isActive,
+    };
   }
 
   async updateById(id: string, dto: UpdateBusinessDto) {
@@ -155,6 +198,24 @@ export class BusinessesService {
     }
 
     return business;
+  }
+
+  private buildWhatsappUrl(contactPhone?: string | null) {
+    if (!contactPhone) return null;
+
+    const digits = contactPhone.replace(/\D/g, '');
+
+    if (!digits) return null;
+
+    return `https://wa.me/${digits}`;
+  }
+
+  private normalizeNullableString(value?: string | null) {
+    if (value === null || value === undefined) return null;
+
+    const trimmed = String(value).trim();
+
+    return trimmed || null;
   }
 
   private normalizeSlug(value: string) {

@@ -44,6 +44,42 @@ export class ProductImageDto {
   isCover?: boolean;
 }
 
+export class ProductDocumentDto {
+  @ApiProperty({ example: 'Cédula verde' })
+  @IsString()
+  label!: string;
+
+  @ApiProperty({ example: 'cedula' })
+  @IsString()
+  type!: string;
+
+  @ApiProperty({
+    example:
+      'https://res.cloudinary.com/demo/raw/upload/v123/documents/cedula.pdf',
+  })
+  @IsUrl()
+  url!: string;
+
+  @ApiProperty({ example: 'documents/demo/cedula' })
+  @IsString()
+  publicId!: string;
+
+  @ApiPropertyOptional({ example: 'cedula.pdf' })
+  @IsOptional()
+  @IsString()
+  fileName?: string;
+
+  @ApiPropertyOptional({ example: 'application/pdf' })
+  @IsOptional()
+  @IsString()
+  mimeType?: string;
+
+  @ApiPropertyOptional({ example: '2026-05-10T12:00:00.000Z' })
+  @IsOptional()
+  @IsDateString()
+  uploadedAt?: string;
+}
+
 export class ProductVariantDto {
   @ApiPropertyOptional({ example: 'M' })
   @IsOptional()
@@ -310,6 +346,16 @@ export class CreateProductDto {
   @ValidateNested({ each: true })
   @Type(() => ProductImageDto)
   images?: ProductImageDto[];
+
+  @ApiPropertyOptional({
+    type: [ProductDocumentDto],
+    description: 'Documentos internos del producto/vehículo',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductDocumentDto)
+  documents?: ProductDocumentDto[];
 
   @ApiPropertyOptional({
     type: ProductVehicleDetailsDto,

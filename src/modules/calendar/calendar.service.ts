@@ -42,11 +42,11 @@ type UnifiedCalendarEvent = {
   title: string;
   description?: string | null;
   type:
-    | 'reminder'
-    | 'appointment'
-    | 'meeting'
-    | 'task'
-    | 'deadline';
+  | 'reminder'
+  | 'appointment'
+  | 'meeting'
+  | 'task'
+  | 'deadline';
   status: 'pending' | 'completed' | 'canceled';
   startAt: Date;
   endAt?: Date | null;
@@ -54,10 +54,10 @@ type UnifiedCalendarEvent = {
   reminderMinutesBefore?: number | null;
   assignedUserId?: string | null;
   source:
-    | 'calendar'
-    | 'public_booking'
-    | 'expense_calendar'
-    | 'product_calendar';
+  | 'calendar'
+  | 'public_booking'
+  | 'expense_calendar'
+  | 'product_calendar';
   contactName?: string | null;
   contactPhone?: string | null;
   contactEmail?: string | null;
@@ -106,7 +106,7 @@ export class CalendarService {
     @InjectModel(Product.name)
     private readonly productModel: Model<ProductDocument>,
     private readonly businessesService: BusinessesService,
-  ) {}
+  ) { }
 
   async create(dto: CreateCalendarEventDto, currentUser: CurrentUser) {
     this.ensureBusinessContext(currentUser);
@@ -1259,8 +1259,12 @@ export class CalendarService {
     }> = [];
 
     for (const range of ranges) {
+      if (!range?.start || !range?.end) continue;
+
       const rangeStartMinutes = this.timeToMinutes(range.start);
       const rangeEndMinutes = this.timeToMinutes(range.end);
+
+      if (rangeEndMinutes <= rangeStartMinutes) continue;
 
       let cursor = rangeStartMinutes;
 
@@ -1435,7 +1439,9 @@ export class CalendarService {
   }
 
   private timeToMinutes(value: string) {
-    const match = /^(\d{2}):(\d{2})$/.exec(value);
+    const raw = String(value || '').trim();
+
+    const match = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(raw);
 
     if (!match) {
       throw new BadRequestException('Invalid time format, expected HH:mm');
@@ -1444,7 +1450,25 @@ export class CalendarService {
     const hours = Number(match[1]);
     const minutes = Number(match[2]);
 
+    if (
+      Number.isNaN(hours) ||
+      Number.isNaN(minutes) ||
+      hours < 0 ||
+      hours > 23 ||
+      minutes < 0 ||
+      minutes > 59
+    ) {
+      throw new BadRequestException('Invalid time value');
+    }
+
     return hours * 60 + minutes;
+  }
+
+  private buildDateFromMinutes(baseDate: Date, totalMinutes: number) {
+    const date = new Date(baseDate);
+    date.setHours(0, 0, 0, 0);
+    date.setMinutes(totalMinutes);
+    return date;
   }
 
   private minutesToTime(totalMinutes: number) {
@@ -1455,12 +1479,5 @@ export class CalendarService {
       2,
       '0',
     )}`;
-  }
-
-  private buildDateFromMinutes(baseDate: Date, totalMinutes: number) {
-    const date = new Date(baseDate);
-    date.setHours(0, 0, 0, 0);
-    date.setMinutes(totalMinutes);
-    return date;
   }
 }

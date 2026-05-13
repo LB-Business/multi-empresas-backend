@@ -22,13 +22,31 @@ import { UpdateMyBusinessProfileDto } from './dto/update-my-business-profile.dto
 import { BusinessesService } from './businesses.service';
 
 @ApiTags('Businesses')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('businesses')
 export class BusinessesController {
   constructor(private readonly businessesService: BusinessesService) {}
 
+  /**
+   * Ruta pública para landing/storefront.
+   * No usa JwtAuthGuard ni RolesGuard.
+   *
+   * URL final:
+   * GET /api/businesses/public/:slug/profile
+   *
+   * Ejemplo:
+   * GET /api/businesses/public/drops-market/profile
+   */
+  @Get('public/:slug/profile')
+  @ApiOperation({
+    summary: 'Get public business profile by slug',
+  })
+  getPublicBusinessProfile(@Param('slug') slug: string) {
+    return this.businessesService.getPublicBusinessProfile(slug);
+  }
+
   @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles(UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'List all businesses (SUPER_ADMIN only)' })
   findAll() {
@@ -36,6 +54,8 @@ export class BusinessesController {
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles(UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Create a business (SUPER_ADMIN only)' })
   create(@Body() dto: CreateBusinessDto) {
@@ -43,6 +63,8 @@ export class BusinessesController {
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles(UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Update any business admin fields (SUPER_ADMIN only)' })
   updateById(@Param('id') id: string, @Body() dto: UpdateBusinessDto) {
@@ -50,6 +72,8 @@ export class BusinessesController {
   }
 
   @Patch(':id/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles(UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Enable or disable a business (SUPER_ADMIN only)' })
   updateStatus(
@@ -60,6 +84,8 @@ export class BusinessesController {
   }
 
   @Get('me')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles(UserRole.OWNER, UserRole.ADMIN, UserRole.EDITOR)
   @ApiOperation({ summary: 'Get current business profile' })
   getMyBusiness(@CurrentUserDecorator() currentUser: CurrentUser) {
@@ -67,6 +93,8 @@ export class BusinessesController {
   }
 
   @Patch('me/profile')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles(UserRole.OWNER, UserRole.ADMIN)
   @ApiOperation({
     summary: 'Update current business profile fields (OWNER/ADMIN only)',

@@ -64,6 +64,32 @@ export class ProductImage {
 const ProductImageSchema = SchemaFactory.createForClass(ProductImage);
 
 @Schema({ _id: false })
+export class ProductDocumentFile {
+  @Prop({ type: String, required: true, trim: true })
+  label!: string;
+
+  @Prop({ type: String, required: true, trim: true })
+  type!: string;
+
+  @Prop({ type: String, required: true, trim: true })
+  url!: string;
+
+  @Prop({ type: String, required: true, trim: true })
+  publicId!: string;
+
+  @Prop({ type: String, default: null, trim: true })
+  fileName?: string | null;
+
+  @Prop({ type: String, default: null, trim: true })
+  mimeType?: string | null;
+
+  @Prop({ type: Date, default: Date.now })
+  uploadedAt!: Date;
+}
+
+const ProductDocumentFileSchema = SchemaFactory.createForClass(ProductDocumentFile);
+
+@Schema({ _id: false })
 export class ProductVehicleDetails {
   @Prop({ type: String, default: null, trim: true })
   brand?: string | null;
@@ -215,6 +241,9 @@ export class Product {
 
   @Prop({ type: [ProductImageSchema], default: [] })
   images!: ProductImage[];
+
+  @Prop({ type: [ProductDocumentFileSchema], default: [] })
+  documents!: ProductDocumentFile[];
 
   @Prop({ type: [ProductVariantSchema], default: [] })
   variants!: ProductVariant[];

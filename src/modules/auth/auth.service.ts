@@ -24,6 +24,34 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {}
 
+  private async toAuthUser(user: any) {
+    const safeUser = this.usersService.toSafeUser(user);
+
+    if (!safeUser?.businessId) {
+      return {
+        ...safeUser,
+        businessName: '',
+        businessLogoUrl: '',
+      };
+    }
+
+    try {
+      const business = await this.businessesService.findById(safeUser.businessId);
+
+      return {
+        ...safeUser,
+        businessName: business?.name ?? '',
+        businessLogoUrl: business?.logoUrl ?? '',
+      };
+    } catch {
+      return {
+        ...safeUser,
+        businessName: '',
+        businessLogoUrl: '',
+      };
+    }
+  }
+
   async bootstrapSuperAdmin(
     dto: BootstrapSuperAdminDto,
     bootstrapKey?: string,
@@ -73,7 +101,7 @@ export class AuthService {
 
     return {
       message: 'SUPER_ADMIN bootstrapped successfully',
-      user: this.usersService.toSafeUser(user),
+      user: await this.toAuthUser(user),
       ...tokens,
     };
   }
@@ -119,7 +147,7 @@ export class AuthService {
     return {
       message: 'Owner registered successfully',
       business,
-      user: this.usersService.toSafeUser(user),
+      user: await this.toAuthUser(user),
       ...tokens,
     };
   }
@@ -148,13 +176,22 @@ export class AuthService {
     };
 
     const tokens = await this.issueTokens(payload);
+
     await this.usersService.setRefreshTokenHash(user.id, tokens.refreshToken);
     await this.usersService.touchLastLogin(user.id);
 
     return {
       message: 'Login successful',
-      user: this.usersService.toSafeUser(user),
+      user: await this.toAuthUser(user),
       ...tokens,
+    };
+  }
+
+  async me(currentUser: CurrentUser) {
+    const fullUser = await this.usersService.findById(currentUser.sub);
+
+    return {
+      user: await this.toAuthUser(fullUser),
     };
   }
 
