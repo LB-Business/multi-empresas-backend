@@ -12,7 +12,7 @@ async function bootstrap() {
     origin: [
       'http://localhost:8080',
       'http://localhost:3000',
-      'http://localhost:3000',
+      'http://localhost:5173',
       'https://lb-business.vercel.app',
     ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
