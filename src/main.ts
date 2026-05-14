@@ -15,6 +15,7 @@ async function bootstrap() {
       'http://localhost:5173',
       'https://lb-business.vercel.app',
       'https://maite-puce.vercel.app',
+      'https://loval-motors.vercel.app',
     ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
