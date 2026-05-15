@@ -13,15 +13,19 @@ async function bootstrap() {
       'http://localhost:8080',
       'http://localhost:3000',
       'http://localhost:5173',
+
       'https://lb-business.vercel.app',
       'https://maite-puce.vercel.app',
       'https://loval-motors.vercel.app',
+
+      'https://lbcodeworks.com.ar',
+      'https://www.lbcodeworks.com.ar',
+      'https://dashboard.lbcodeworks.com.ar',
     ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: false,
   });
-
   app.setGlobalPrefix('api');
 
   app.useGlobalPipes(
