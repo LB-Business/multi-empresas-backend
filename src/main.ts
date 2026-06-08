@@ -21,6 +21,8 @@ async function bootstrap() {
       'https://lbcodeworks.com.ar',
       'https://www.lbcodeworks.com.ar',
       'https://dashboard.lbcodeworks.com.ar',
+      'https://sanfilippoexclusivos.vercel.app',
+    
     ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
