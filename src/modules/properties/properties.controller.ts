@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PropertiesService } from './properties.service';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
+import { PublishPropertyMercadoLibreDto } from './dto/publish-property-mercadolibre.dto';
 
 function getBusinessIdFromCurrentUser(currentUser: CurrentUser) {
   const user = currentUser as any;
@@ -85,6 +86,18 @@ export class PropertiesController {
     const userId = getUserIdFromCurrentUser(currentUser);
 
     return this.propertiesService.create(dto, businessId, userId);
+  }
+
+  @Post(':id/mercadolibre/publish')
+  @ApiOperation({ summary: 'Publish a property to Mercado Libre' })
+  publishToMercadoLibre(
+    @Param('id') id: string,
+    @Body() dto: PublishPropertyMercadoLibreDto,
+    @CurrentUserDecorator() currentUser: CurrentUser,
+  ) {
+    const businessId = getBusinessIdFromCurrentUser(currentUser);
+
+    return this.propertiesService.publishToMercadoLibre(id, dto, businessId);
   }
 
   @Get(':id')
@@ -163,9 +176,7 @@ export class PublicPropertiesController {
   findPublicLandingByBusinessSlug(
     @Param('businessSlug') businessSlug: string,
   ) {
-    return this.propertiesService.findPublicLandingByBusinessSlug(
-      businessSlug,
-    );
+    return this.propertiesService.findPublicLandingByBusinessSlug(businessSlug);
   }
 
   @Get(':businessSlug/properties/:propertySlug')

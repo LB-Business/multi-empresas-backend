@@ -91,7 +91,7 @@ export class MercadoLibreController {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8080';
 
     return res.redirect(
-      `${frontendUrl}/dashboard/mercadolibre/questions?ml=connected`,
+      `${frontendUrl}/dashboard/properties?ml=connected`,
     );
   }
 

@@ -5,12 +5,11 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import {
-    Property,
-    PropertyDocument,
-} from './property.schema';
+import { Property, PropertyDocument } from './property.schema';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
+import { MercadoLibreService } from '../mercadolibre/mercadolibre.service';
+import { PublishPropertyMercadoLibreDto } from './dto/publish-property-mercadolibre.dto';
 
 function slugify(value: string) {
     return value
@@ -56,11 +55,321 @@ function normalizeDocuments(documents: any[] = []) {
         }));
 }
 
+function limitText(value: string, max = 60) {
+    return String(value || '').trim().slice(0, max);
+}
+
+function getRequiredString(value: any, label: string) {
+    const stringValue = String(value || '').trim();
+
+    if (!stringValue) {
+        throw new BadRequestException(`${label} es obligatorio`);
+    }
+
+    return stringValue;
+}
+
+function getRequiredNumber(value: any, label: string) {
+    const numberValue = Number(value);
+
+    if (!Number.isFinite(numberValue) || numberValue <= 0) {
+        throw new BadRequestException(
+            `${label} es obligatorio y debe ser mayor a cero`,
+        );
+    }
+
+    return numberValue;
+}
+
+function getRequiredCoordinate(value: any, label: string) {
+    const numberValue = Number(value);
+
+    if (!Number.isFinite(numberValue)) {
+        throw new BadRequestException(`${label} es obligatorio`);
+    }
+
+    return numberValue;
+}
+
+function getRequiredInteger(value: any, label: string, min = 0) {
+    const numberValue = Number(value);
+
+    if (!Number.isFinite(numberValue) || numberValue < min) {
+        throw new BadRequestException(
+            `${label} es obligatorio y debe ser mayor o igual a ${min}`,
+        );
+    }
+
+    return Math.trunc(numberValue);
+}
+
+function buildAddressLine(property: any, dtoLocation?: any) {
+    const address = property.address ?? {};
+
+    const dtoAddressLine =
+        dtoLocation?.address_line ||
+        dtoLocation?.addressLine ||
+        dtoLocation?.address;
+
+    if (dtoAddressLine) return String(dtoAddressLine).trim();
+
+    const street = String(address.street || '').trim();
+    const number = String(address.number || '').trim();
+
+    const joined = [street, number].filter(Boolean).join(' ').trim();
+
+    if (joined) return joined;
+
+    return 'Dirección a consultar';
+}
+
+function resolveMercadoLibreLocation(property: any, dtoLocation?: any) {
+    const address = property.address ?? {};
+
+    const neighborhoodName =
+        dtoLocation?.neighborhood?.name ||
+        dtoLocation?.neighborhoodName ||
+        dtoLocation?.neighborhood ||
+        address.neighborhood;
+
+    const neighborhoodId =
+        dtoLocation?.neighborhood?.id ||
+        dtoLocation?.neighborhoodId ||
+        '';
+
+    const cityName =
+        dtoLocation?.city?.name ||
+        dtoLocation?.cityName ||
+        dtoLocation?.city ||
+        address.city;
+
+    const cityId =
+        dtoLocation?.city?.id ||
+        dtoLocation?.cityId ||
+        '';
+
+    const stateName =
+        dtoLocation?.state?.name ||
+        dtoLocation?.stateName ||
+        dtoLocation?.state ||
+        address.state;
+
+    const stateId =
+        dtoLocation?.state?.id ||
+        dtoLocation?.stateId ||
+        '';
+
+    const countryName =
+        dtoLocation?.country?.name ||
+        dtoLocation?.countryName ||
+        dtoLocation?.country ||
+        address.country ||
+        'Argentina';
+
+    const countryId =
+        dtoLocation?.country?.id ||
+        dtoLocation?.countryId ||
+        'AR';
+
+    const latitude =
+        dtoLocation?.latitude ??
+        dtoLocation?.lat ??
+        address.latitude;
+
+    const longitude =
+        dtoLocation?.longitude ??
+        dtoLocation?.lng ??
+        address.longitude;
+
+    return {
+        address_line: buildAddressLine(property, dtoLocation),
+        zip_code: String(dtoLocation?.zip_code || dtoLocation?.zipCode || ''),
+        neighborhood: {
+            id: String(neighborhoodId || ''),
+            name: getRequiredString(neighborhoodName, 'location.neighborhood.name'),
+        },
+        city: {
+            id: String(cityId || ''),
+            name: getRequiredString(cityName, 'location.city.name'),
+        },
+        state: {
+            id: String(stateId || ''),
+            name: getRequiredString(stateName, 'location.state.name'),
+        },
+        country: {
+            id: String(countryId || 'AR'),
+            name: getRequiredString(countryName, 'location.country.name'),
+        },
+        latitude: getRequiredCoordinate(latitude, 'location.latitude'),
+        longitude: getRequiredCoordinate(longitude, 'location.longitude'),
+    };
+}
+
+function numberUnitAttribute(id: string, name: string, value: number, unit = 'm²') {
+    return {
+        id,
+        name,
+        value_id: null,
+        value_name: `${value} ${unit}`,
+        value_struct: {
+            number: value,
+            unit,
+        },
+        values: [
+            {
+                id: null,
+                name: `${value} ${unit}`,
+                struct: {
+                    number: value,
+                    unit,
+                },
+            },
+        ],
+        attribute_group_id: 'FIND',
+        attribute_group_name: 'Ficha técnica',
+        value_type: 'number_unit',
+    };
+}
+
+function numberAttribute(id: string, name: string, value: number) {
+    return {
+        id,
+        name,
+        value_id: null,
+        value_name: String(value),
+        value_struct: null,
+        values: [
+            {
+                id: null,
+                name: String(value),
+                struct: null,
+            },
+        ],
+        attribute_group_id: 'FIND',
+        attribute_group_name: 'Ficha técnica',
+        value_type: 'number',
+    };
+}
+
+function buildRealEstateAttributes(
+    property: any,
+    dtoAttributes: any[] | undefined,
+) {
+    const features = property.features ?? {};
+
+    const totalArea = getRequiredNumber(
+        features.totalArea,
+        'TOTAL_AREA / Metros totales',
+    );
+
+    const parkingLots = getRequiredInteger(
+        features.garages ?? 0,
+        'PARKING_LOTS / Cocheras',
+        0,
+    );
+
+    const coveredArea = getRequiredNumber(
+        features.coveredArea,
+        'COVERED_AREA / Metros cubiertos',
+    );
+
+    const bedrooms = getRequiredInteger(
+        features.bedrooms,
+        'BEDROOMS / Dormitorios',
+        1,
+    );
+
+    const bathrooms = getRequiredInteger(
+        features.bathrooms,
+        'FULL_BATHROOMS / Baños',
+        1,
+    );
+
+    const requiredAttributes = [
+        numberUnitAttribute('TOTAL_AREA', 'Superficie total', totalArea),
+        numberAttribute('PARKING_LOTS', 'Estacionamientos', parkingLots),
+        numberUnitAttribute('COVERED_AREA', 'Superficie cubierta', coveredArea),
+        numberAttribute('BEDROOMS', 'Dormitorios', bedrooms),
+        numberAttribute('FULL_BATHROOMS', 'Baños', bathrooms),
+    ];
+
+    const incomingAttributes = Array.isArray(dtoAttributes)
+        ? dtoAttributes.filter((attr) => {
+            if (!attr) return false;
+            if (Array.isArray(attr)) return false;
+            if (typeof attr !== 'object') return false;
+            if (!attr.id || typeof attr.id !== 'string') return false;
+            return true;
+        })
+        : [];
+
+    const requiredIds = new Set(requiredAttributes.map((attr) => attr.id));
+
+    const extraAttributes = incomingAttributes
+        .filter((attr) => !requiredIds.has(attr.id) && attr.id !== 'ITEM_CONDITION')
+        .map((attr) => {
+            const cleanAttr: any = {
+                id: attr.id,
+            };
+
+            if (attr.name) cleanAttr.name = attr.name;
+            if (attr.value_id !== undefined) cleanAttr.value_id = attr.value_id;
+            if (attr.value_name !== undefined) cleanAttr.value_name = attr.value_name;
+            if (attr.value_struct !== undefined) cleanAttr.value_struct = attr.value_struct;
+            if (attr.values !== undefined) cleanAttr.values = attr.values;
+            if (attr.attribute_group_id) cleanAttr.attribute_group_id = attr.attribute_group_id;
+            if (attr.attribute_group_name) cleanAttr.attribute_group_name = attr.attribute_group_name;
+            if (attr.value_type) cleanAttr.value_type = attr.value_type;
+
+            return cleanAttr;
+        });
+
+    return [...requiredAttributes, ...extraAttributes];
+}
+
+async function readMercadoLibreJson<T>(res: Response): Promise<T> {
+    const text = await res.text();
+
+    let data: any = {};
+
+    try {
+        data = text ? JSON.parse(text) : {};
+    } catch {
+        data = { raw: text };
+    }
+
+    // Mercado Libre a veces devuelve 402 payment_required,
+    // pero igualmente crea el item y devuelve id/permalink/status.
+    // En ese caso NO lo tratamos como error fatal.
+    if (res.status === 402 && data?.id) {
+        return data as T;
+    }
+
+    if (!res.ok) {
+        throw new BadRequestException({
+            message: data?.message || data?.error || 'Error Mercado Libre',
+            status: res.status,
+            data,
+        });
+    }
+
+    return data as T;
+}
+
+function extractMercadoLibreError(err: any) {
+    if (typeof err?.getResponse === 'function') {
+        return err.getResponse();
+    }
+
+    return err?.response || err;
+}
+
 @Injectable()
 export class PropertiesService {
     constructor(
         @InjectModel(Property.name)
         private readonly propertyModel: Model<PropertyDocument>,
+        private readonly mercadoLibreService: MercadoLibreService,
     ) { }
 
     async findAll(
@@ -96,86 +405,7 @@ export class PropertiesService {
             ];
         }
 
-        return this.propertyModel
-            .find(query)
-            .sort({ createdAt: -1 })
-            .lean();
-    }
-
-    async findPublicByBusinessSlug(businessSlug: string) {
-        return this.propertyModel
-            .aggregate([
-                {
-                    $lookup: {
-                        from: 'businesses',
-                        localField: 'businessId',
-                        foreignField: '_id',
-                        as: 'business',
-                    },
-                },
-                {
-                    $unwind: '$business',
-                },
-                {
-                    $match: {
-                        'business.slug': businessSlug,
-                        showOnLanding: true,
-                        status: 'published',
-                    },
-                },
-                {
-                    $sort: {
-                        createdAt: -1,
-                    },
-                },
-                {
-                    $project: {
-                        internalNotes: 0,
-                        documents: 0,
-                        ml: 0,
-                    },
-                },
-            ]);
-    }
-
-    async findPublicOneBySlug(businessSlug: string, propertySlug: string) {
-        const result = await this.propertyModel.aggregate([
-            {
-                $lookup: {
-                    from: 'businesses',
-                    localField: 'businessId',
-                    foreignField: '_id',
-                    as: 'business',
-                },
-            },
-            {
-                $unwind: '$business',
-            },
-            {
-                $match: {
-                    'business.slug': businessSlug,
-                    slug: propertySlug,
-                    showOnLanding: true,
-                    status: 'published',
-                },
-            },
-            {
-                $project: {
-                    internalNotes: 0,
-                    documents: 0,
-                    ml: 0,
-                },
-            },
-            {
-                $limit: 1,
-            },
-        ]);
-
-        if (!result.length) {
-            throw new NotFoundException('Propiedad no encontrada');
-        }
-
-        return result[0];
+        return this.propertyModel.find(query).sort({ createdAt: -1 }).lean();
     }
 
     async findOne(id: string, businessId: string) {
@@ -197,11 +427,7 @@ export class PropertiesService {
         return property;
     }
 
-    async create(
-        dto: CreatePropertyDto,
-        businessId: string,
-        userId?: string,
-    ) {
+    async create(dto: CreatePropertyDto, businessId: string, userId?: string) {
         const title = dto.title?.trim();
 
         if (!title) {
@@ -243,12 +469,14 @@ export class PropertiesService {
             images: normalizeImages(dto.images),
             documents: normalizeDocuments(dto.documents),
             internalNotes: dto.internalNotes ?? '',
-            createdBy: userId && Types.ObjectId.isValid(userId)
-                ? new Types.ObjectId(userId)
-                : undefined,
-            updatedBy: userId && Types.ObjectId.isValid(userId)
-                ? new Types.ObjectId(userId)
-                : undefined,
+            createdBy:
+                userId && Types.ObjectId.isValid(userId)
+                    ? new Types.ObjectId(userId)
+                    : undefined,
+            updatedBy:
+                userId && Types.ObjectId.isValid(userId)
+                    ? new Types.ObjectId(userId)
+                    : undefined,
         });
 
         return created.toObject();
@@ -304,9 +532,10 @@ export class PropertiesService {
             ...dto,
             title: nextTitle,
             slug: nextSlug,
-            updatedBy: userId && Types.ObjectId.isValid(userId)
-                ? new Types.ObjectId(userId)
-                : undefined,
+            updatedBy:
+                userId && Types.ObjectId.isValid(userId)
+                    ? new Types.ObjectId(userId)
+                    : undefined,
         };
 
         if (dto.images) {
@@ -318,7 +547,9 @@ export class PropertiesService {
         }
 
         if (dto.price !== undefined) payload.price = Number(dto.price ?? 0);
-        if (dto.expenses !== undefined) payload.expenses = Number(dto.expenses ?? 0);
+        if (dto.expenses !== undefined) {
+            payload.expenses = Number(dto.expenses ?? 0);
+        }
 
         const updated = await this.propertyModel
             .findOneAndUpdate(
@@ -347,7 +578,7 @@ export class PropertiesService {
             throw new BadRequestException('Estado inválido');
         }
 
-        return this.propertyModel
+        const updated = await this.propertyModel
             .findOneAndUpdate(
                 {
                     _id: new Types.ObjectId(id),
@@ -363,6 +594,12 @@ export class PropertiesService {
                 },
             )
             .lean();
+
+        if (!updated) {
+            throw new NotFoundException('Propiedad no encontrada');
+        }
+
+        return updated;
     }
 
     async updateShowOnLanding(
@@ -370,7 +607,7 @@ export class PropertiesService {
         showOnLanding: boolean,
         businessId: string,
     ) {
-        return this.propertyModel
+        const updated = await this.propertyModel
             .findOneAndUpdate(
                 {
                     _id: new Types.ObjectId(id),
@@ -386,6 +623,187 @@ export class PropertiesService {
                 },
             )
             .lean();
+
+        if (!updated) {
+            throw new NotFoundException('Propiedad no encontrada');
+        }
+
+        return updated;
+    }
+
+    async publishToMercadoLibre(
+        id: string,
+        dto: PublishPropertyMercadoLibreDto,
+        businessId: string,
+    ) {
+        if (!Types.ObjectId.isValid(id)) {
+            throw new BadRequestException('ID inválido');
+        }
+
+        const dtoAny = dto as any;
+
+        const property = await this.propertyModel.findOne({
+            _id: new Types.ObjectId(id),
+            businessId: new Types.ObjectId(businessId),
+        });
+
+        if (!property) {
+            throw new NotFoundException('Propiedad no encontrada');
+        }
+
+        if (property.ml?.itemId && !dto.force) {
+            throw new BadRequestException(
+                'La propiedad ya tiene una publicación en Mercado Libre. Usá force=true si querés republicar.',
+            );
+        }
+
+        if (!dto.categoryId?.trim()) {
+            throw new BadRequestException('categoryId es obligatorio');
+        }
+
+        const images = [...(property.images ?? [])].sort(
+            (a: any, b: any) => Number(a.order ?? 0) - Number(b.order ?? 0),
+        );
+
+        if (!images.length) {
+            throw new BadRequestException(
+                'La propiedad necesita al menos una imagen para publicar en Mercado Libre',
+            );
+        }
+
+        const price = Number(dto.price ?? property.price ?? 0);
+
+        if (!price || price <= 0) {
+            throw new BadRequestException(
+                'La propiedad necesita un precio mayor a cero',
+            );
+        }
+
+        const condition = dto.condition ?? 'used';
+
+        const attributes = buildRealEstateAttributes(
+            property,
+            dto.attributes,
+        );
+
+        const location = resolveMercadoLibreLocation(
+            property,
+            dtoAny.location,
+        );
+
+        const titleBase = dto.title?.trim() || property.title;
+        const title = limitText(
+            dto.testMode ? `Propiedad de Test - ${titleBase}` : titleBase,
+            60,
+        );
+
+        const accessToken =
+            await this.mercadoLibreService.getValidAccessToken(businessId);
+
+        const payload: any = {
+            title,
+            listing_type_id: dto.listingTypeId || 'silver',
+            category_id: dto.categoryId.trim(),
+            currency_id: dto.currencyId || property.currency || 'ARS',
+            price,
+            available_quantity: 1,
+            attributes,
+            condition,
+            location,
+            pictures: images.slice(0, 10).map((image: any) => ({
+                source: image.url,
+            })),
+            seller_custom_field: `lb-property-${property._id.toString()}`,
+        };
+
+        if (dto.buyingMode) {
+            payload.buying_mode = dto.buyingMode;
+        }
+
+        try {
+            const res = await fetch('https://api.mercadolibre.com/items', {
+                method: 'POST',
+                headers: {
+                    authorization: `Bearer ${accessToken}`,
+                    accept: 'application/json',
+                    'content-type': 'application/json',
+                },
+                body: JSON.stringify(payload),
+            });
+
+            const mlItem = await readMercadoLibreJson<any>(res);
+
+            const mlStatus = mlItem.status || 'unknown';
+
+            const updated = await this.propertyModel
+                .findOneAndUpdate(
+                    {
+                        _id: new Types.ObjectId(id),
+                        businessId: new Types.ObjectId(businessId),
+                    },
+                    {
+                        $set: {
+                            status: 'published',
+                            showOnLanding: true,
+                            ml: {
+                                itemId: mlItem.id,
+                                status: mlStatus,
+                                permalink: mlItem.permalink,
+                                categoryId: mlItem.category_id,
+                                listingTypeId: mlItem.listing_type_id,
+                                lastSyncAt: new Date(),
+                                publishedAt: new Date(),
+                                errorMessage:
+                                    mlStatus === 'payment_required'
+                                        ? 'Mercado Libre creó la publicación pero requiere pago o activación del paquete.'
+                                        : null,
+                            },
+                        },
+                    },
+                    {
+                        new: true,
+                    },
+                )
+                .lean();
+
+            return {
+                ok: mlItem.status !== 'payment_required',
+                needsPayment: mlItem.status === 'payment_required',
+                property: updated,
+                mercadoLibre: {
+                    id: mlItem.id,
+                    status: mlItem.status,
+                    permalink: mlItem.permalink,
+                    categoryId: mlItem.category_id,
+                    listingTypeId: mlItem.listing_type_id,
+                },
+                sentPayload: payload,
+            };
+        } catch (err: any) {
+            const response = extractMercadoLibreError(err);
+
+            const message =
+                response?.message ||
+                response?.error ||
+                err?.message ||
+                'No se pudo publicar en Mercado Libre';
+
+            await this.propertyModel.findOneAndUpdate(
+                {
+                    _id: new Types.ObjectId(id),
+                    businessId: new Types.ObjectId(businessId),
+                },
+                {
+                    $set: {
+                        'ml.lastSyncAt': new Date(),
+                        'ml.errorMessage':
+                            typeof message === 'string' ? message : JSON.stringify(message),
+                    },
+                },
+            );
+
+            throw err;
+        }
     }
 
     async remove(id: string, businessId: string) {
@@ -453,11 +871,9 @@ export class PropertiesService {
                     title: 1,
                     slug: 1,
                     description: 1,
-
                     operationType: 1,
                     propertyType: 1,
                     status: 1,
-
                     price: 1,
                     currency: 1,
                     expenses: 1,
@@ -587,11 +1003,9 @@ export class PropertiesService {
                     title: 1,
                     slug: 1,
                     description: 1,
-
                     operationType: 1,
                     propertyType: 1,
                     status: 1,
-
                     price: 1,
                     currency: 1,
                     expenses: 1,
