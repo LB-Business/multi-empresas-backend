@@ -12,6 +12,8 @@ import { ExpensesModule } from './modules/expenses/expenses.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
 import { FinanceModule } from './modules/finance/finance.module';
 import { MovementsModule } from './modules/movements/movements.module';
+import { PropertiesModule } from './modules/properties/properties.module';
+import { MercadoLibreModule } from './modules/mercadolibre/mercadolibre.module';
 
 @Module({
   imports: [
@@ -34,6 +36,8 @@ import { MovementsModule } from './modules/movements/movements.module';
     CalendarModule,
     FinanceModule,
     MovementsModule,
+    PropertiesModule,
+    MercadoLibreModule,
   ],
 })
 export class AppModule {}
