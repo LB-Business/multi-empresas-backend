@@ -1,13 +1,14 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
+  Param,
   Post,
   Query,
   Res,
   UnauthorizedException,
   UseGuards,
-  Body,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -90,8 +91,76 @@ export class MercadoLibreController {
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8080';
 
-    return res.redirect(
-      `${frontendUrl}/dashboard/properties?ml=connected`,
+    return res.redirect(`${frontendUrl}/dashboard/properties?ml=connected`);
+  }
+
+  @Get('questions')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'List Mercado Libre questions saved in CRM' })
+  async listQuestions(
+    @CurrentUserDecorator() currentUser: CurrentUser,
+    @Query('status') status?: string,
+    @Query('itemId') itemId?: string,
+    @Query('propertyId') propertyId?: string,
+    @Query('sync') sync?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const businessId = getBusinessIdFromCurrentUser(currentUser);
+
+    return this.mercadoLibreService.listQuestions(businessId, {
+      status,
+      itemId,
+      propertyId,
+      sync: sync === 'true' || sync === '1',
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
+
+  @Post('questions/sync')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Sync Mercado Libre questions from API' })
+  async syncQuestions(
+    @CurrentUserDecorator() currentUser: CurrentUser,
+    @Body() body: any,
+  ) {
+    const businessId = getBusinessIdFromCurrentUser(currentUser);
+
+    return this.mercadoLibreService.syncQuestionsByBusiness(businessId, {
+      status: body?.status,
+      itemId: body?.itemId,
+    });
+  }
+
+  @Get('questions/:questionId')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get one Mercado Libre question from CRM' })
+  async getQuestion(
+    @CurrentUserDecorator() currentUser: CurrentUser,
+    @Param('questionId') questionId: string,
+  ) {
+    const businessId = getBusinessIdFromCurrentUser(currentUser);
+
+    return this.mercadoLibreService.getQuestion(businessId, questionId);
+  }
+
+  @Post('questions/:questionId/answer')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Answer Mercado Libre question from CRM' })
+  async answerQuestion(
+    @CurrentUserDecorator() currentUser: CurrentUser,
+    @Param('questionId') questionId: string,
+    @Body('text') text: string,
+  ) {
+    const businessId = getBusinessIdFromCurrentUser(currentUser);
+
+    return this.mercadoLibreService.answerQuestion(
+      businessId,
+      questionId,
+      text,
     );
   }
 

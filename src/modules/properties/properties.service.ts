@@ -251,50 +251,296 @@ function numberAttribute(id: string, name: string, value: number) {
     };
 }
 
-function buildRealEstateAttributes(
-    property: any,
-    dtoAttributes: any[] | undefined,
-) {
-    const features = property.features ?? {};
+const ML_REQUIRED_ATTRIBUTES_BY_CATEGORY: Record<string, string[]> = {
+    "MLA374731": [],
+    "MLA374732": [],
+    "MLA6414": [
+        "TOTAL_AREA",
+        "LAND_ACCESS",
+        "BEDROOMS",
+        "FULL_BATHROOMS"
+    ],
+    "MLA6413": [
+        "TOTAL_AREA",
+        "LAND_ACCESS",
+        "BEDROOMS",
+        "FULL_BATHROOMS"
+    ],
+    "MLA1467": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "BEDROOMS",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA50278": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "GUESTS",
+        "BEDROOMS",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA401805": [
+        "MODEL_NAME",
+        "COVERED_AREA",
+        "BEDROOMS",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS",
+        "UNIT_NAME",
+        "TOTAL_AREA",
+        "DEVELOPMENT_NAME",
+        "POSSESSION_STATUS"
+    ],
+    "MLA401685": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "BEDROOMS",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA50542": [
+        "TOTAL_AREA"
+    ],
+    "MLA50543": [
+        "TOTAL_AREA"
+    ],
+    "MLA392266": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA392267": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA1473": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "ROOMS",
+        "BEDROOMS",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA50279": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "GUESTS",
+        "ROOMS",
+        "BEDROOMS",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA401806": [
+        "MODEL_NAME",
+        "COVERED_AREA",
+        "TOTAL_AREA",
+        "ROOMS",
+        "BEDROOMS",
+        "FULL_BATHROOMS",
+        "UNIT_NAME",
+        "PARKING_LOTS",
+        "DEVELOPMENT_NAME",
+        "POSSESSION_STATUS"
+    ],
+    "MLA401686": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "ROOMS",
+        "BEDROOMS",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA1476": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA1477": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA50546": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA50550": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA79243": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA79244": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA50539": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "PARKING_LOTS",
+        "FULL_BATHROOMS"
+    ],
+    "MLA401804": [
+        "MODEL_NAME",
+        "COVERED_AREA",
+        "FULL_BATHROOMS",
+        "UNIT_NAME",
+        "PARKING_LOTS",
+        "DEVELOPMENT_NAME",
+        "POSSESSION_STATUS"
+    ],
+    "MLA401684": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "PARKING_LOTS",
+        "FULL_BATHROOMS"
+    ],
+    "MLA6395": [
+        "TOTAL_AREA",
+        "COVERED_AREA"
+    ],
+    "MLA50283": [
+        "TOTAL_AREA",
+        "COVERED_AREA"
+    ],
+    "MLA6396": [
+        "TOTAL_AREA",
+        "COVERED_AREA"
+    ],
+    "MLA105181": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "ROOMS",
+        "BEDROOMS",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA105180": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "GUESTS",
+        "ROOMS",
+        "BEDROOMS",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA105182": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "ROOMS",
+        "BEDROOMS",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA50548": [],
+    "MLA50549": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "LAND_ACCESS",
+        "BEDROOMS",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA52745": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "GUESTS",
+        "BEDROOMS",
+        "FULL_BATHROOMS"
+    ],
+    "MLA458174": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "LAND_ACCESS",
+        "BEDROOMS",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA458173": [
+        "MODEL_NAME",
+        "TOTAL_AREA",
+        "UNIT_NAME",
+        "DEVELOPMENT_NAME",
+        "POSSESSION_STATUS"
+    ],
+    "MLA1494": [
+        "TOTAL_AREA",
+        "LAND_ACCESS"
+    ],
+    "MLA401803": [
+        "MODEL_NAME",
+        "TOTAL_AREA",
+        "UNIT_NAME",
+        "DEVELOPMENT_NAME",
+        "POSSESSION_STATUS"
+    ],
+    "MLA401687": [
+        "TOTAL_AREA",
+        "LAND_ACCESS"
+    ],
+    "MLA52741": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "GUESTS",
+        "ROOMS",
+        "BEDROOMS",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ],
+    "MLA50537": [
+        "TOTAL_AREA",
+        "COVERED_AREA",
+        "GUESTS",
+        "ROOMS",
+        "BEDROOMS",
+        "FULL_BATHROOMS",
+        "PARKING_LOTS"
+    ]
+};
 
-    const totalArea = getRequiredNumber(
-        features.totalArea,
-        'TOTAL_AREA / Metros totales',
+const ML_FALLBACK_REQUIRED_ATTRIBUTES = [
+    'TOTAL_AREA',
+    'COVERED_AREA',
+    'BEDROOMS',
+    'FULL_BATHROOMS',
+    'PARKING_LOTS',
+];
+
+const ML_BASE_ATTRIBUTE_IDS = new Set([
+    'TOTAL_AREA',
+    'COVERED_AREA',
+    'ROOMS',
+    'BEDROOMS',
+    'FULL_BATHROOMS',
+    'PARKING_LOTS',
+]);
+
+function getCategoryRequiredAttributes(categoryId: string) {
+    return (
+        ML_REQUIRED_ATTRIBUTES_BY_CATEGORY[categoryId] ||
+        ML_FALLBACK_REQUIRED_ATTRIBUTES
     );
+}
 
-    const parkingLots = getRequiredInteger(
-        features.garages ?? 0,
-        'PARKING_LOTS / Cocheras',
-        0,
-    );
-
-    const coveredArea = getRequiredNumber(
-        features.coveredArea,
-        'COVERED_AREA / Metros cubiertos',
-    );
-
-    const bedrooms = getRequiredInteger(
-        features.bedrooms,
-        'BEDROOMS / Dormitorios',
-        1,
-    );
-
-    const bathrooms = getRequiredInteger(
-        features.bathrooms,
-        'FULL_BATHROOMS / Baños',
-        1,
-    );
-
-    const requiredAttributes = [
-        numberUnitAttribute('TOTAL_AREA', 'Superficie total', totalArea),
-        numberAttribute('PARKING_LOTS', 'Estacionamientos', parkingLots),
-        numberUnitAttribute('COVERED_AREA', 'Superficie cubierta', coveredArea),
-        numberAttribute('BEDROOMS', 'Dormitorios', bedrooms),
-        numberAttribute('FULL_BATHROOMS', 'Baños', bathrooms),
-    ];
-
-    const incomingAttributes = Array.isArray(dtoAttributes)
-        ? dtoAttributes.filter((attr) => {
+function normalizeIncomingAttributes(attributes: any[] | undefined) {
+    return Array.isArray(attributes)
+        ? attributes.filter((attr) => {
             if (!attr) return false;
             if (Array.isArray(attr)) return false;
             if (typeof attr !== 'object') return false;
@@ -302,27 +548,198 @@ function buildRealEstateAttributes(
             return true;
         })
         : [];
+}
 
-    const requiredIds = new Set(requiredAttributes.map((attr) => attr.id));
+function findIncomingAttribute(
+    attributes: any[] | undefined,
+    attributeId: string,
+) {
+    return normalizeIncomingAttributes(attributes).find(
+        (attr) => attr.id === attributeId,
+    );
+}
+
+function cleanIncomingMercadoLibreAttribute(attr: any) {
+    const cleanAttr: any = {
+        id: attr.id,
+    };
+
+    if (attr.name) cleanAttr.name = attr.name;
+    if (attr.value_id !== undefined) cleanAttr.value_id = attr.value_id;
+    if (attr.value_name !== undefined) cleanAttr.value_name = attr.value_name;
+    if (attr.value_struct !== undefined) cleanAttr.value_struct = attr.value_struct;
+    if (attr.values !== undefined) cleanAttr.values = attr.values;
+    if (attr.attribute_group_id) cleanAttr.attribute_group_id = attr.attribute_group_id;
+    if (attr.attribute_group_name) cleanAttr.attribute_group_name = attr.attribute_group_name;
+    if (attr.value_type) cleanAttr.value_type = attr.value_type;
+
+    return cleanAttr;
+}
+
+function getIncomingAttributeValue(
+    attributes: any[] | undefined,
+    attributeId: string,
+) {
+    const found = findIncomingAttribute(attributes, attributeId);
+
+    if (!found) return null;
+
+    return found.value_name || found.value_id || null;
+}
+
+function buildBaseAttributeFromProperty(attributeId: string, property: any) {
+    const features = property.features ?? {};
+
+    if (attributeId === 'TOTAL_AREA') {
+        return numberUnitAttribute(
+            'TOTAL_AREA',
+            'Superficie total',
+            getRequiredNumber(features.totalArea, 'TOTAL_AREA / Metros totales'),
+        );
+    }
+
+    if (attributeId === 'COVERED_AREA') {
+        return numberUnitAttribute(
+            'COVERED_AREA',
+            'Superficie cubierta',
+            getRequiredNumber(features.coveredArea, 'COVERED_AREA / Metros cubiertos'),
+        );
+    }
+
+    if (attributeId === 'ROOMS') {
+        return numberAttribute(
+            'ROOMS',
+            'Ambientes',
+            getRequiredInteger(features.rooms, 'ROOMS / Ambientes', 1),
+        );
+    }
+
+    if (attributeId === 'BEDROOMS') {
+        return numberAttribute(
+            'BEDROOMS',
+            'Dormitorios',
+            getRequiredInteger(features.bedrooms, 'BEDROOMS / Dormitorios', 1),
+        );
+    }
+
+    if (attributeId === 'FULL_BATHROOMS') {
+        return numberAttribute(
+            'FULL_BATHROOMS',
+            'Baños',
+            getRequiredInteger(features.bathrooms, 'FULL_BATHROOMS / Baños', 1),
+        );
+    }
+
+    if (attributeId === 'PARKING_LOTS') {
+        return numberAttribute(
+            'PARKING_LOTS',
+            'Cocheras',
+            getRequiredInteger(features.garages ?? 0, 'PARKING_LOTS / Cocheras', 0),
+        );
+    }
+
+    return null;
+}
+
+function defaultExtraAttribute(attributeId: string, property: any) {
+    const title = String(property.title || 'Propiedad').trim() || 'Propiedad';
+    const features = property.features ?? {};
+
+    if (attributeId === 'LAND_ACCESS') {
+        return {
+            id: 'LAND_ACCESS',
+            value_id: '245046',
+        };
+    }
+
+    if (attributeId === 'GUESTS') {
+        const guests = Number(features.bedrooms || features.rooms || 1);
+
+        return {
+            id: 'GUESTS',
+            value_name: String(Number.isFinite(guests) && guests > 0 ? guests : 1),
+        };
+    }
+
+    if (attributeId === 'MODEL_NAME') {
+        return { id: 'MODEL_NAME', value_name: title };
+    }
+
+    if (attributeId === 'UNIT_NAME') {
+        return { id: 'UNIT_NAME', value_name: title };
+    }
+
+    if (attributeId === 'DEVELOPMENT_NAME') {
+        return { id: 'DEVELOPMENT_NAME', value_name: title };
+    }
+
+    if (attributeId === 'POSSESSION_STATUS') {
+        return {
+            id: 'POSSESSION_STATUS',
+            value_id: '242413',
+        };
+    }
+
+    return null;
+}
+
+function buildRequiredExtraAttribute(
+    attributeId: string,
+    property: any,
+    dtoAttributes: any[] | undefined,
+) {
+    const incoming = findIncomingAttribute(dtoAttributes, attributeId);
+
+    if (incoming) {
+        return cleanIncomingMercadoLibreAttribute(incoming);
+    }
+
+    const fallback = defaultExtraAttribute(attributeId, property);
+
+    if (fallback) return fallback;
+
+    throw new BadRequestException(
+        `El atributo ${attributeId} es obligatorio para esta categoría de Mercado Libre`,
+    );
+}
+
+function buildRealEstateAttributes(
+    property: any,
+    dtoAttributes: any[] | undefined,
+    categoryId: string,
+) {
+    const requiredIds = getCategoryRequiredAttributes(categoryId);
+    const incomingAttributes = normalizeIncomingAttributes(dtoAttributes);
+    const usedIds = new Set<string>();
+    const requiredAttributes: any[] = [];
+
+    requiredIds.forEach((attributeId) => {
+        if (ML_BASE_ATTRIBUTE_IDS.has(attributeId)) {
+            const baseAttribute = buildBaseAttributeFromProperty(attributeId, property);
+
+            if (baseAttribute) {
+                requiredAttributes.push(baseAttribute);
+                usedIds.add(attributeId);
+            }
+
+            return;
+        }
+
+        const extraAttribute = buildRequiredExtraAttribute(
+            attributeId,
+            property,
+            dtoAttributes,
+        );
+
+        if (extraAttribute) {
+            requiredAttributes.push(extraAttribute);
+            usedIds.add(attributeId);
+        }
+    });
 
     const extraAttributes = incomingAttributes
-        .filter((attr) => !requiredIds.has(attr.id) && attr.id !== 'ITEM_CONDITION')
-        .map((attr) => {
-            const cleanAttr: any = {
-                id: attr.id,
-            };
-
-            if (attr.name) cleanAttr.name = attr.name;
-            if (attr.value_id !== undefined) cleanAttr.value_id = attr.value_id;
-            if (attr.value_name !== undefined) cleanAttr.value_name = attr.value_name;
-            if (attr.value_struct !== undefined) cleanAttr.value_struct = attr.value_struct;
-            if (attr.values !== undefined) cleanAttr.values = attr.values;
-            if (attr.attribute_group_id) cleanAttr.attribute_group_id = attr.attribute_group_id;
-            if (attr.attribute_group_name) cleanAttr.attribute_group_name = attr.attribute_group_name;
-            if (attr.value_type) cleanAttr.value_type = attr.value_type;
-
-            return cleanAttr;
-        });
+        .filter((attr) => !usedIds.has(attr.id) && attr.id !== 'ITEM_CONDITION')
+        .map((attr) => cleanIncomingMercadoLibreAttribute(attr));
 
     return [...requiredAttributes, ...extraAttributes];
 }
@@ -680,10 +1097,12 @@ export class PropertiesService {
         }
 
         const condition = dto.condition ?? 'used';
+        const categoryId = dto.categoryId.trim();
 
         const attributes = buildRealEstateAttributes(
             property,
             dto.attributes,
+            categoryId,
         );
 
         const location = resolveMercadoLibreLocation(
@@ -703,7 +1122,7 @@ export class PropertiesService {
         const payload: any = {
             title,
             listing_type_id: dto.listingTypeId || 'silver',
-            category_id: dto.categoryId.trim(),
+            category_id: categoryId,
             currency_id: dto.currencyId || property.currency || 'ARS',
             price,
             available_quantity: 1,
