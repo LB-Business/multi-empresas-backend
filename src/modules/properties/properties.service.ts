@@ -707,6 +707,7 @@ function buildRealEstateAttributes(
     property: any,
     dtoAttributes: any[] | undefined,
     categoryId: string,
+    categoryAttributes: any[] = [],
 ) {
     const requiredIds = getCategoryRequiredAttributes(categoryId);
     const incomingAttributes = normalizeIncomingAttributes(dtoAttributes);
@@ -741,7 +742,270 @@ function buildRealEstateAttributes(
         .filter((attr) => !usedIds.has(attr.id) && attr.id !== 'ITEM_CONDITION')
         .map((attr) => cleanIncomingMercadoLibreAttribute(attr));
 
-    return [...requiredAttributes, ...extraAttributes];
+    const automaticOptionalAttributes = buildAutomaticOptionalAttributes(
+        property,
+        categoryAttributes,
+    ).filter(
+        (attr) =>
+            !usedIds.has(attr.id) &&
+            !extraAttributes.some((incoming) => incoming.id === attr.id),
+    );
+
+    return [
+        ...requiredAttributes,
+        ...extraAttributes,
+        ...automaticOptionalAttributes,
+    ];
+}
+
+function normalizeAttributeText(value: any) {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+}
+
+function findCategoryAttribute(
+    categoryAttributes: any[],
+    ids: string[],
+    nameHints: string[] = [],
+) {
+    const normalizedIds = new Set(ids.map((id) => id.toUpperCase()));
+
+    const byId = categoryAttributes.find((attribute) =>
+        normalizedIds.has(String(attribute?.id || '').toUpperCase()),
+    );
+
+    if (byId) return byId;
+
+    const normalizedHints = nameHints.map(normalizeAttributeText);
+
+    return categoryAttributes.find((attribute) => {
+        const name = normalizeAttributeText(attribute?.name);
+        return normalizedHints.some((hint) => name.includes(hint));
+    });
+}
+
+function buildAttributeFromDefinition(definition: any, value: any) {
+    if (!definition?.id) return null;
+
+    const valueType = String(definition.value_type || 'string');
+
+    if (typeof value === 'boolean') {
+        const expectedNames = value
+            ? new Set(['si', 'yes', 'true'])
+            : new Set(['no', 'false']);
+
+        const selectedValue = Array.isArray(definition.values)
+            ? definition.values.find((item: any) =>
+                expectedNames.has(normalizeAttributeText(item?.name)),
+            )
+            : undefined;
+
+        if (selectedValue?.id) {
+            return {
+                id: definition.id,
+                value_id: String(selectedValue.id),
+            };
+        }
+
+        return {
+            id: definition.id,
+            value_name: value ? 'Sí' : 'No',
+        };
+    }
+
+    const numericValue = Number(value);
+
+    if (Number.isFinite(numericValue)) {
+        if (valueType === 'number_unit') {
+            const unit =
+                definition.default_unit ||
+                definition.allowed_units?.[0]?.id ||
+                definition.allowed_units?.[0]?.name ||
+                '';
+
+            return {
+                id: definition.id,
+                value_name: unit ? `${numericValue} ${unit}` : String(numericValue),
+                value_struct: unit
+                    ? {
+                        number: numericValue,
+                        unit,
+                    }
+                    : undefined,
+            };
+        }
+
+        return {
+            id: definition.id,
+            value_name: String(numericValue),
+        };
+    }
+
+    const stringValue = String(value ?? '').trim();
+
+    if (!stringValue) return null;
+
+    return {
+        id: definition.id,
+        value_name: stringValue,
+    };
+}
+
+function buildAutomaticOptionalAttributes(
+    property: any,
+    categoryAttributes: any[],
+) {
+    if (!Array.isArray(categoryAttributes) || !categoryAttributes.length) {
+        return [];
+    }
+
+    const features = property.features ?? {};
+    const result: any[] = [];
+
+    const append = (
+        ids: string[],
+        nameHints: string[],
+        value: any,
+        include: boolean,
+    ) => {
+        if (!include) return;
+
+        const definition = findCategoryAttribute(
+            categoryAttributes,
+            ids,
+            nameHints,
+        );
+
+        if (!definition) return;
+
+        const attribute = buildAttributeFromDefinition(definition, value);
+
+        if (attribute) result.push(attribute);
+    };
+
+    append(
+        ['MAINTENANCE_FEE'],
+        ['expensas', 'gasto comun', 'mantenimiento'],
+        Number(property.expenses),
+        Number(property.expenses) > 0,
+    );
+
+    append(
+        ['PROPERTY_AGE', 'AGE'],
+        ['antiguedad'],
+        Number(features.age),
+        Number.isFinite(Number(features.age)) && Number(features.age) >= 0,
+    );
+
+    append(
+        ['FLOORS', 'NUMBER_OF_FLOORS'],
+        ['cantidad de pisos', 'pisos'],
+        Number(features.floors),
+        Number(features.floors) > 0,
+    );
+
+    const booleanFeatures = [
+        {
+            ids: ['HAS_SWIMMING_POOL', 'HAS_POOL'],
+            hints: ['pileta', 'piscina'],
+            value: features.hasPool,
+        },
+        {
+            ids: ['HAS_GRILL'],
+            hints: ['parrilla', 'quincho'],
+            value: features.hasGrill,
+        },
+        {
+            ids: ['HAS_GARDEN'],
+            hints: ['jardin'],
+            value: features.hasGarden,
+        },
+        {
+            ids: ['HAS_SECURITY'],
+            hints: ['seguridad'],
+            value: features.hasSecurity,
+        },
+        {
+            ids: ['HAS_ELEVATOR'],
+            hints: ['ascensor'],
+            value: features.hasElevator,
+        },
+        {
+            ids: ['HAS_BALCONY'],
+            hints: ['balcon'],
+            value: features.hasBalcony,
+        },
+        {
+            ids: ['HAS_TERRACE'],
+            hints: ['terraza'],
+            value: features.hasTerrace,
+        },
+    ];
+
+    booleanFeatures.forEach(({ ids, hints, value }) => {
+        append(ids, hints, !!value, typeof value === 'boolean');
+    });
+
+    return result;
+}
+
+async function getMercadoLibreCategoryAttributes(
+    categoryId: string,
+    accessToken: string,
+) {
+    try {
+        const response = await fetch(
+            `https://api.mercadolibre.com/categories/${encodeURIComponent(categoryId)}/attributes`,
+            {
+                headers: {
+                    authorization: `Bearer ${accessToken}`,
+                    accept: 'application/json',
+                },
+            },
+        );
+
+        if (!response.ok) return [];
+
+        const data = await response.json();
+        return Array.isArray(data) ? data : [];
+    } catch {
+        // Los atributos principales siguen publicándose aunque Mercado Libre
+        // no permita consultar temporalmente los atributos opcionales.
+        return [];
+    }
+}
+
+async function publishMercadoLibreDescription(
+    itemId: string,
+    description: string,
+    accessToken: string,
+) {
+    const plainText = String(description || '').trim();
+
+    if (!itemId || !plainText) return;
+
+    const response = await fetch(
+        `https://api.mercadolibre.com/items/${encodeURIComponent(itemId)}/description`,
+        {
+            method: 'POST',
+            headers: {
+                authorization: `Bearer ${accessToken}`,
+                accept: 'application/json',
+                'content-type': 'application/json',
+            },
+            body: JSON.stringify({ plain_text: plainText }),
+        },
+    );
+
+    if (!response.ok) {
+        const body = await response.text();
+        throw new Error(
+            `La publicación fue creada, pero no se pudo cargar la descripción: ${body || response.status}`,
+        );
+    }
 }
 
 async function readMercadoLibreJson<T>(res: Response): Promise<T> {
@@ -1099,10 +1363,17 @@ export class PropertiesService {
         const condition = dto.condition ?? 'used';
         const categoryId = dto.categoryId.trim();
 
+        const accessToken =
+            await this.mercadoLibreService.getValidAccessToken(businessId);
+
+        const categoryAttributes =
+            await getMercadoLibreCategoryAttributes(categoryId, accessToken);
+
         const attributes = buildRealEstateAttributes(
             property,
             dto.attributes,
             categoryId,
+            categoryAttributes,
         );
 
         const location = resolveMercadoLibreLocation(
@@ -1115,9 +1386,6 @@ export class PropertiesService {
             dto.testMode ? `Propiedad de Test - ${titleBase}` : titleBase,
             60,
         );
-
-        const accessToken =
-            await this.mercadoLibreService.getValidAccessToken(businessId);
 
         const payload: any = {
             title,
@@ -1153,6 +1421,21 @@ export class PropertiesService {
             const mlItem = await readMercadoLibreJson<any>(res);
 
             const mlStatus = mlItem.status || 'unknown';
+            let descriptionWarning: string | null = null;
+
+            if (mlItem.id && property.description) {
+                try {
+                    await publishMercadoLibreDescription(
+                        mlItem.id,
+                        property.description,
+                        accessToken,
+                    );
+                } catch (descriptionError: any) {
+                    descriptionWarning =
+                        descriptionError?.message ||
+                        'La publicación fue creada, pero no se pudo cargar la descripción.';
+                }
+            }
 
             const updated = await this.propertyModel
                 .findOneAndUpdate(
@@ -1175,7 +1458,7 @@ export class PropertiesService {
                                 errorMessage:
                                     mlStatus === 'payment_required'
                                         ? 'Mercado Libre creó la publicación pero requiere pago o activación del paquete.'
-                                        : null,
+                                        : descriptionWarning,
                             },
                         },
                     },
@@ -1196,6 +1479,7 @@ export class PropertiesService {
                     categoryId: mlItem.category_id,
                     listingTypeId: mlItem.listing_type_id,
                 },
+                descriptionWarning,
                 sentPayload: payload,
             };
         } catch (err: any) {
