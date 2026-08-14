@@ -18,6 +18,7 @@ export type PropertyType =
   | 'campo'
   | 'duplex'
   | 'ph'
+  | 'construccion'
   | 'otro';
 
 export type PropertyStatus =
@@ -221,6 +222,7 @@ export class Property {
       'campo',
       'duplex',
       'ph',
+      'construccion',
       'otro',
     ],
     default: 'casa',

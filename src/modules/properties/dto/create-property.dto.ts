@@ -187,6 +187,7 @@ export class CreatePropertyDto {
     'campo',
     'duplex',
     'ph',
+    'construccion',
     'otro',
   ])
   propertyType?:
@@ -199,6 +200,7 @@ export class CreatePropertyDto {
     | 'campo'
     | 'duplex'
     | 'ph'
+    | 'construccion'
     | 'otro';
 
   @IsOptional()
