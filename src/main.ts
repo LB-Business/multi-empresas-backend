@@ -18,20 +18,20 @@ async function bootstrap() {
       'https://lb-business.vercel.app',
       'https://maite-puce.vercel.app',
       'https://loval-motors.vercel.app',
+      'https://sanfilippoexclusivos.vercel.app',
 
       'https://lbcodeworks.com.ar',
       'https://www.lbcodeworks.com.ar',
       'https://dashboard.lbcodeworks.com.ar',
-      'https://sanfilippoexclusivos.vercel.app',
 
-
-      'https://marinpropiedades.com.ar'
-    
+      'https://marinpropiedades.com.ar',
+      'https://www.marinpropiedades.com.ar',
     ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: false,
   });
+
   app.setGlobalPrefix('api');
 
   app.useGlobalPipes(
@@ -39,7 +39,9 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
-      transformOptions: { enableImplicitConversion: true },
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
     }),
   );
 
@@ -53,11 +55,15 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
+
   SwaggerModule.setup('docs', app, document, {
-    swaggerOptions: { persistAuthorization: true },
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
   });
 
   const port = configService.get<number>('app.port', 3000);
+
   await app.listen(port);
 
   console.log(`API ready on http://localhost:${port}/api`);
