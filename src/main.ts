@@ -26,6 +26,9 @@ async function bootstrap() {
 
       'https://marinpropiedades.com.ar',
       'https://www.marinpropiedades.com.ar',
+
+      'https://www.gocarscanning.com',
+      'https://gocarscanning.com',
     ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
